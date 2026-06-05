@@ -1,0 +1,3885 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>改文 · 小说去AI味</title>
+<style>
+  /* ============ 设计变量 ============ */
+  :root {
+    --paper:        #f4efe4;     /* 暖米色，像旧稿纸 */
+    --paper-deep:   #ebe4d2;
+    --ink:          #1f1c17;     /* 主文字，深墨 */
+    --ink-soft:     #4a463e;
+    --ink-faint:    #8b8676;
+    --rule:         #d8d0bb;     /* 分隔线 */
+    --vermillion:   #9a3434;     /* 朱砂红，操作色 */
+    --vermillion-d: #7a2828;
+    --shadow:       0 1px 0 rgba(31,28,23,.04), 0 8px 28px rgba(31,28,23,.08);
+    --shadow-deep:  0 24px 60px rgba(31,28,23,.18);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Songti SC", "Source Han Serif SC", "Noto Serif SC", "SimSun", "宋体", serif;
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* 整页带一点纸的纹理 */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 1;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(154,52,52,.04), transparent),
+      radial-gradient(900px 500px at 100% 110%, rgba(31,28,23,.05), transparent);
+  }
+
+  button, input, textarea, select {
+    font-family: inherit; font-size: inherit; color: inherit;
+  }
+
+  ::selection { background: rgba(154,52,52,.18); }
+
+  /* ============ 登录页 ============ */
+  .login-stage {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .login-card {
+    width: 100%; max-width: 380px;
+    background: #fbf7eb;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 44px 40px 36px;
+    box-shadow: var(--shadow-deep);
+    position: relative;
+  }
+  /* 卡片左上角小红印 */
+  .login-card::before {
+    content: "改";
+    position: absolute; top: -14px; left: 32px;
+    width: 30px; height: 30px;
+    background: var(--vermillion);
+    color: #fbf7eb;
+    font-size: 16px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 6px rgba(122,40,40,.4);
+    letter-spacing: 0;
+  }
+  .login-title {
+    margin: 0 0 4px;
+    font-size: 22px; font-weight: 600; letter-spacing: 4px;
+    color: var(--ink);
+  }
+  .login-sub {
+    margin: 0 0 32px;
+    font-size: 12px; letter-spacing: 2px;
+    color: var(--ink-faint);
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  .field { margin-bottom: 18px; }
+  .field label {
+    display: block;
+    font-size: 11px; letter-spacing: 3px;
+    color: var(--ink-faint);
+    margin-bottom: 6px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    text-transform: uppercase;
+  }
+  .field input {
+    width: 100%;
+    padding: 8px 0 9px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--rule);
+    outline: none;
+    transition: border-color .2s;
+    font-size: 15px;
+  }
+  .field input:focus {
+    border-bottom-color: var(--vermillion);
+  }
+  .btn-primary {
+    display: block;
+    width: 100%;
+    margin-top: 28px;
+    padding: 12px 0;
+    background: var(--ink);
+    color: var(--paper);
+    border: none; border-radius: 1px;
+    font-size: 14px; letter-spacing: 8px; padding-left: 8px;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .btn-primary:hover { background: var(--vermillion); }
+  .btn-primary:disabled { background: var(--ink-faint); cursor: wait; }
+
+  .login-err {
+    margin-top: 14px;
+    padding: 8px 12px;
+    background: rgba(154,52,52,.08);
+    border-left: 2px solid var(--vermillion);
+    color: var(--vermillion-d);
+    font-size: 13px;
+    display: none;
+  }
+  .login-err.show { display: block; }
+
+  /* ============ 主工作台 ============ */
+  .app { position: fixed; inset: 0; display: none; flex-direction: column; }
+  .app.active { display: flex; }
+
+  /* 顶栏 */
+  .topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 24px;
+    height: 52px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+    flex-shrink: 0;
+    z-index: 2;
+  }
+  .brand {
+    font-size: 16px; letter-spacing: 4px; font-weight: 600;
+    color: var(--ink);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .brand-mark {
+    width: 22px; height: 22px;
+    background: var(--vermillion);
+    color: var(--paper);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+  .topbar .spacer { flex: 1; }
+  .meta {
+    display: flex; align-items: center; gap: 18px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: var(--ink-soft);
+    letter-spacing: 1px;
+  }
+  .meta b { color: var(--vermillion-d); font-weight: 600; }
+  .icon-btn {
+    background: transparent; border: 1px solid transparent;
+    width: 28px; height: 28px; cursor: pointer;
+    border-radius: 2px;
+    color: var(--ink-soft);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all .15s;
+  }
+  .icon-btn:hover { background: var(--paper-deep); color: var(--ink); }
+
+  /* 控制条（模型选择 + 操作） */
+  .controls {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+    flex-shrink: 0;
+  }
+  .model-select {
+    flex: 1; max-width: 320px;
+    padding: 8px 14px;
+    border: 1px solid var(--rule);
+    background: #fbf7eb;
+    border-radius: 1px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color .15s;
+    font-size: 13px;
+  }
+  .model-select:focus, .model-select:hover { border-color: var(--ink-faint); }
+
+  /* 路由徽标：固定 178,代替原来的 router 下拉框 */
+  .router-pill {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 7px 14px 7px 10px;
+    background: #fbf7eb;
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--vermillion);
+    border-radius: 1px;
+    font-size: 13px;
+    color: var(--ink);
+    max-width: 320px;
+  }
+  .router-pill-tag {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px; letter-spacing: 2px;
+    color: var(--vermillion); text-transform: uppercase;
+    padding-right: 8px;
+    border-right: 1px solid var(--rule);
+  }
+  .router-pill-name {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .router-pill.miss {
+    border-left-color: var(--ink-faint);
+    color: var(--ink-faint);
+  }
+  .router-pill.miss .router-pill-tag {
+    color: var(--ink-faint);
+  }
+
+  .btn-go {
+    padding: 10px 28px;
+    background: var(--vermillion);
+    color: #fbf7eb;
+    border: none; border-radius: 1px;
+    font-size: 13px; letter-spacing: 6px; padding-right: 22px;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .btn-go:hover { background: var(--vermillion-d); }
+  .btn-go:disabled { background: var(--ink-faint); cursor: not-allowed; }
+  .btn-stop {
+    padding: 10px 22px;
+    background: transparent;
+    color: var(--vermillion-d);
+    border: 1px solid var(--vermillion);
+    border-radius: 1px;
+    font-size: 13px; letter-spacing: 4px;
+    cursor: pointer;
+    display: none;
+  }
+  .btn-stop.show { display: inline-block; }
+  .btn-stop:hover { background: rgba(154,52,52,.08); }
+
+  /* 主区域：左右分栏 */
+  .workspace {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1px 1fr;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .divider {
+    background: var(--rule);
+  }
+  .pane {
+    display: flex; flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--paper);
+    position: relative;   /* 作为「跳到底部」浮动箭头的定位锚点 */
+  }
+  .pane-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 24px 8px;
+    font-size: 11px; letter-spacing: 4px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    flex-shrink: 0;
+  }
+  .pane-head .count { color: var(--ink-faint); font-size: 11px; }
+  .pane-body {
+    flex: 1;
+    overflow: auto;
+    padding: 6px 32px 32px;
+    min-height: 0;
+  }
+
+  /* 「跳到底部」浮动箭头：固定在输出面板右下角，不随内容滚动，
+     只在「下方还有未看到的内容」（未贴底）时浮现，点一下滚到底。 */
+  .to-bottom-fab {
+    position: absolute; right: 22px; bottom: 22px;
+    width: 38px; height: 38px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--paper); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 50%;
+    box-shadow: 0 4px 14px rgba(31,28,23,.18);
+    cursor: pointer; z-index: 30;
+    font-size: 18px; line-height: 1;
+    opacity: 0; transform: translateY(6px); pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .to-bottom-fab.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .to-bottom-fab:hover { background: #fbf7eb; }
+
+  /* 原文输入 */
+  #inputText {
+    width: 100%; height: 100%;
+    border: none; outline: none; resize: none;
+    background: transparent;
+    color: var(--ink);
+    font-family: inherit; font-size: 15.5px; line-height: 1.85;
+    padding: 4px 0;
+  }
+  #inputText::placeholder { color: var(--ink-faint); font-style: italic; }
+
+  /* 输出区 */
+  #outputText {
+    white-space: pre-wrap; word-break: break-word;
+    font-size: 15.5px; line-height: 1.85;
+    color: var(--ink);
+    min-height: 100%;
+  }
+  #outputText:empty::before {
+    content: "结果会在这里逐字显现……";
+    color: var(--ink-faint); font-style: italic;
+  }
+  /* 闪动光标 */
+  .caret {
+    display: inline-block; width: 2px; height: 1.15em;
+    background: var(--vermillion);
+    transform: translateY(3px);
+    margin-left: 1px;
+    animation: blink 1s steps(2,end) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* think 块 */
+  .think {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: rgba(31,28,23,.04);
+    border-left: 2px solid var(--ink-faint);
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  .think-label {
+    display: block;
+    font-size: 10px; letter-spacing: 3px; color: var(--ink-faint);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  /* ============ 编排:路由轮 vs 正文轮 ============ */
+  /* 中间路由轮（router 只为发 load_model 的那几轮）—— 视觉淡化 */
+  .router-round {
+    display: block;
+    margin: 4px 0;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--ink-faint);
+    opacity: 0.65;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  /* 最终正文轮 —— 完整文本样式 */
+  .final-round {
+    display: block;
+    margin-top: 8px;
+    white-space: pre-wrap; word-break: break-word;
+    font-size: 15.5px;
+    line-height: 1.85;
+    color: var(--ink);
+  }
+  /* 子模型(知识库)轮 —— 大字衬线，与终稿字号一致，方便阅读 */
+  .sub-round {
+    display: block;
+    margin: 8px 0 14px;
+    padding: 12px 18px;
+    background: rgba(31, 28, 23, .03);
+    border-left: 2px solid var(--rule);
+    font-size: 15.5px;
+    line-height: 1.85;
+    color: var(--ink);
+    white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* 「下一步」确认面板:每一次模型调用结束后弹出,等用户点继续 */
+  .next-step-panel {
+    display: block;
+    margin-top: 24px;
+    padding: 14px 18px;
+    background: rgba(154, 52, 52, .045);
+    border: 1px solid rgba(154, 52, 52, .25);
+    border-left: 3px solid var(--vermillion);
+    border-radius: 1px;
+  }
+  .next-step-label {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--vermillion);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .next-step-action {
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  .next-step-action b {
+    color: var(--vermillion-d);
+    font-weight: 600;
+  }
+  .next-step-controls {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .next-step-input {
+    flex: 1;
+    background: #fbf7eb;
+    border: 1px solid var(--rule);
+    border-radius: 1px;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink);
+    outline: none;
+    resize: vertical;
+    min-height: 38px;
+    max-height: 120px;
+    transition: border-color .15s;
+  }
+  .next-step-input:focus { border-color: var(--vermillion); }
+  .next-step-input::placeholder { color: var(--ink-faint); font-style: italic; font-size: 12.5px; }
+  .next-step-go {
+    padding: 0 22px;
+    background: var(--vermillion);
+    color: #fbf7eb;
+    border: none;
+    border-radius: 1px;
+    font-size: 13px;
+    letter-spacing: 4px;
+    padding-right: 18px;
+    cursor: pointer;
+    min-height: 38px;
+    transition: background .2s;
+  }
+  .next-step-go:hover { background: var(--vermillion-d); }
+  /* 用户在输入框写了引导词 → 按钮变态:不再是「确认继续」,而是「让 AI 重新判断」 */
+  .next-step-go.redirect {
+    background: #2c3a4a;
+    letter-spacing: 2px;
+    padding: 0 18px;
+  }
+  .next-step-go.redirect:hover { background: #1c2734; }
+  /* 实时小提示行,告诉用户当前按下按钮会发生什么 */
+  .next-step-hint {
+    margin-top: 8px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--ink-faint);
+    letter-spacing: .3px;
+  }
+  .next-step-hint.redirect {
+    color: #4a5868;
+  }
+  .next-step-hint b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .next-step-hint.redirect b {
+    color: #1c2734;
+  }
+
+  /* 加载分隔条:── 加载知识库 #163 · 文风 · 风格 DNA 详解 ── */
+  .load-divider {
+    display: block;
+    margin: 14px 0 6px;
+    padding: 2px 0;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--vermillion);
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    text-align: center;
+  }
+  .load-divider.done {
+    color: var(--ink-faint);
+  }
+  .load-divider::before,
+  .load-divider::after {
+    content: "──";
+    margin: 0 8px;
+    color: inherit;
+    opacity: .55;
+  }
+
+  /* 「模型违反一轮一个」的橙色告警条 */
+  .multi-warn {
+    display: block;
+    margin: 8px 0;
+    padding: 6px 10px;
+    background: rgba(184, 115, 51, .12);
+    border-left: 2px solid #b87333;
+    font-size: 12px;
+    color: #7a4c1f;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+
+  /* ============ 继续对话 ============ */
+  /* 终稿(包括反问句)一出,右栏底部会冒出这个回复框,
+     用户键入回复 → 把回复拼到 routerContent 末尾 → 178 接着跑下一轮。 */
+  .reply-box {
+    display: block;
+    margin-top: 28px;
+    padding-top: 18px;
+    border-top: 1px dashed var(--rule);
+  }
+  .reply-box-label {
+    display: block;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .reply-box-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .reply-input {
+    flex: 1;
+    background: #fbf7eb;
+    border: 1px solid var(--rule);
+    border-radius: 1px;
+    padding: 9px 12px;
+    font-family: inherit;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink);
+    outline: none;
+    resize: vertical;
+    min-height: 44px;
+    max-height: 160px;
+    transition: border-color .15s;
+  }
+  .reply-input:focus { border-color: var(--vermillion); }
+  .reply-input::placeholder { color: var(--ink-faint); font-style: italic; }
+  .reply-send {
+    padding: 0 22px;
+    background: var(--vermillion);
+    color: #fbf7eb;
+    border: none; border-radius: 1px;
+    font-size: 13px; letter-spacing: 4px; padding-right: 18px;
+    cursor: pointer;
+    min-height: 44px;
+    transition: background .2s;
+  }
+  .reply-send:hover { background: var(--vermillion-d); }
+  .reply-send:disabled { background: var(--ink-faint); cursor: not-allowed; }
+
+  /* 用户回复:在 router 上下一轮的中间,作为视觉锚点 */
+  .user-reply {
+    display: block;
+    margin: 22px 0 8px;
+    padding: 9px 14px;
+    background: rgba(154, 52, 52, .055);
+    border-left: 2px solid var(--vermillion);
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--ink);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .user-reply-label {
+    display: inline-block;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--vermillion);
+    text-transform: uppercase;
+    margin-right: 10px;
+    vertical-align: baseline;
+  }
+
+  /* 底部状态条 */
+  .statusbar {
+    height: 24px;
+    padding: 0 24px;
+    border-top: 1px solid var(--rule);
+    background: var(--paper-deep);
+    display: flex; align-items: center;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    flex-shrink: 0;
+    letter-spacing: 1px;
+  }
+  .statusbar .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ink-faint);
+    margin-right: 6px;
+  }
+  .statusbar.busy .dot { background: var(--vermillion); animation: pulse 1.2s ease-in-out infinite; }
+  .statusbar.done .dot { background: #4a7c3a; }
+  .statusbar.error .dot { background: var(--vermillion); }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: .3; }
+  }
+  .statusbar .spacer { flex: 1; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 40px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    padding: 10px 20px;
+    background: var(--ink);
+    color: var(--paper);
+    border-radius: 2px;
+    font-size: 13px; letter-spacing: 2px;
+    box-shadow: var(--shadow-deep);
+    opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { background: var(--vermillion); }
+
+  /* 弹出菜单（设置） */
+  .menu-pop {
+    position: absolute; right: 16px; top: 48px;
+    background: #fbf7eb;
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    padding: 6px 0;
+    min-width: 180px;
+    display: none;
+    z-index: 20;
+  }
+  .menu-pop.show { display: block; }
+  .menu-pop button {
+    display: block; width: 100%;
+    padding: 8px 18px;
+    text-align: left;
+    background: transparent; border: none;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .menu-pop button:hover { background: var(--paper-deep); color: var(--ink); }
+  .menu-pop hr { border: none; border-top: 1px solid var(--rule); margin: 4px 0; }
+
+  /* 移动响应（虽然主打桌面，但小屏也别炸） */
+  @media (max-width: 760px) {
+    .workspace { grid-template-columns: 1fr; grid-template-rows: 1fr 1px 1fr; }
+  }
+
+  /* ============ 弹窗 ============ */
+  .modal {
+    position: fixed; inset: 0; z-index: 80;
+    background: rgba(31,28,23,.42);
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px;
+    backdrop-filter: blur(2px);
+  }
+  .modal.show { display: flex; }
+  .modal-card {
+    width: 100%; max-width: 720px; max-height: 80vh;
+    background: #fbf7eb;
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow-deep);
+    display: flex; flex-direction: column;
+    border-radius: 2px;
+  }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 14px; letter-spacing: 3px;
+    color: var(--ink);
+  }
+  .modal-body {
+    flex: 1; overflow: auto;
+    padding: 16px 18px 8px;
+    min-height: 200px;
+    display: flex; flex-direction: column;
+  }
+  .modal-hint {
+    margin: 0 0 10px;
+    font-size: 12px; color: var(--ink-faint);
+    line-height: 1.6;
+  }
+  #promptModalText {
+    flex: 1; min-height: 280px;
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    outline: none; resize: vertical;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 13px; line-height: 1.7;
+    color: var(--ink);
+    border-radius: 1px;
+  }
+  #promptModalText:focus { border-color: var(--ink-faint); }
+  .modal-foot {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 18px 14px;
+    border-top: 1px solid var(--rule);
+  }
+  .modal-count {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; color: var(--ink-faint);
+    letter-spacing: 1px;
+  }
+  .btn-ghost {
+    padding: 7px 16px;
+    background: transparent;
+    color: var(--ink-soft);
+    border: 1px solid var(--rule);
+    border-radius: 1px;
+    cursor: pointer;
+    font-size: 13px; letter-spacing: 2px;
+  }
+  .btn-ghost:hover { background: var(--paper-deep); color: var(--ink); }
+  .btn-primary-sm {
+    padding: 7px 22px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none; border-radius: 1px;
+    cursor: pointer;
+    font-size: 13px; letter-spacing: 4px;
+  }
+  .btn-primary-sm:hover { background: var(--vermillion); }
+
+  /* ============ 导入 / 导出 ============ */
+  /* 给 .pane-head 加 position:relative,作为导出菜单的锚点 */
+  .pane-head { position: relative; }
+
+  .pane-actions {
+    display: inline-flex; align-items: center; gap: 10px;
+  }
+  .pane-action {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    padding: 3px 10px 3px 9px;
+    font-family: inherit;
+    font-size: 11px; letter-spacing: 4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 1px;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .pane-action:hover {
+    color: var(--vermillion);
+    border-color: var(--vermillion);
+    background: rgba(154,52,52,.05);
+  }
+  /* 检测到当前有可单独导出的选区时,把导出按钮自动点亮成朱砂红,
+   * 让用户一眼看见「可以仅导出选中」这个隐藏的 affordance */
+  .pane-action.has-selection {
+    color: var(--vermillion);
+    border-color: var(--vermillion);
+    background: rgba(154,52,52,.05);
+  }
+  .pane-action.has-selection:hover {
+    background: rgba(154,52,52,.12);
+  }
+  .pane-action:disabled {
+    opacity: .45; cursor: not-allowed;
+    color: var(--ink-faint); border-color: var(--rule); background: transparent;
+  }
+  .pane-action svg {
+    width: 12px; height: 12px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    flex-shrink: 0;
+  }
+
+  /* 导出格式弹出菜单(挂在右侧 pane-head 下方) */
+  .io-menu {
+    position: absolute;
+    top: calc(100% - 2px); right: 24px;
+    background: #fbf7eb;
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    padding: 6px 0;
+    min-width: 180px;
+    display: none;
+    z-index: 40;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+  .io-menu.show { display: block; }
+  .io-menu button {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 18px;
+    width: 100%;
+    padding: 8px 16px;
+    text-align: left;
+    background: transparent; border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px; letter-spacing: normal;
+    color: var(--ink-soft);
+  }
+  .io-menu button:hover { background: var(--paper-deep); color: var(--ink); }
+  .io-menu .ext {
+    color: var(--ink-faint);
+    font-size: 11px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  /* 菜单分节标题 (例: 导出范围) */
+  .io-menu-section {
+    padding: 8px 16px 4px;
+    font-size: 10px; letter-spacing: 3px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  .io-menu-hr {
+    border: none; border-top: 1px solid var(--rule);
+    margin: 4px 0;
+  }
+  /* 范围切换 (radio 风格) */
+  .io-menu .io-menu-radio {
+    justify-content: flex-start;
+    gap: 0;
+    padding-left: 14px;
+  }
+  .io-menu-radio .dot {
+    width: 9px; height: 9px;
+    border: 1.5px solid var(--ink-faint);
+    border-radius: 50%;
+    margin-right: 10px;
+    flex-shrink: 0;
+    background: transparent;
+    box-sizing: border-box;
+    transition: border-color .15s, background .15s;
+  }
+  .io-menu-radio .label { flex: 1; text-align: left; }
+  .io-menu-radio.active { color: var(--ink); }
+  .io-menu-radio.active .dot {
+    border-color: var(--vermillion);
+    background: var(--vermillion);
+    box-shadow: inset 0 0 0 1.5px #fbf7eb;
+  }
+
+  /* ============ 历史记录 ============ */
+  .history-modal .modal-card {
+    max-width: 760px; height: 76vh; max-height: 720px;
+  }
+  .history-modal .modal-body {
+    padding: 0;
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+  }
+  .history-list {
+    flex: 1; overflow-y: auto;
+    padding: 4px 0;
+  }
+  .history-list-empty {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; min-height: 200px;
+    color: var(--ink-faint); font-style: italic;
+    letter-spacing: 2px;
+    text-align: center; padding: 0 24px;
+  }
+  .history-item {
+    position: relative;
+    padding: 14px 88px 14px 22px;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+    transition: background .15s ease;
+  }
+  .history-item:hover { background: var(--paper-deep); }
+  .history-item:last-child { border-bottom: none; }
+  .history-item-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .history-item-title {
+    font-size: 14px;
+    color: var(--ink);
+    flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-weight: normal;
+  }
+  .history-item-meta {
+    flex-shrink: 0;
+    font-size: 11px; color: var(--ink-faint);
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    letter-spacing: 1px;
+  }
+  .history-item-preview {
+    font-size: 12px;
+    color: var(--ink-faint);
+    line-height: 1.7;
+    overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    max-height: 2.4em;
+  }
+  .history-item-actions {
+    position: absolute;
+    top: 12px; right: 14px;
+    display: flex; gap: 4px;
+    opacity: 0;
+    transition: opacity .15s ease;
+  }
+  .history-item:hover .history-item-actions,
+  .history-item:focus-within .history-item-actions { opacity: 1; }
+  .history-action-btn {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    width: 26px; height: 26px;
+    border-radius: 1px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+  }
+  .history-action-btn:hover {
+    color: var(--vermillion); border-color: var(--vermillion);
+    background: rgba(154,52,52,.05);
+  }
+  .history-action-btn svg {
+    width: 13px; height: 13px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .history-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 18px;
+    border-top: 1px solid var(--rule);
+    flex-shrink: 0;
+  }
+  .history-toolbar .spacer { flex: 1; }
+  .history-toolbar button {
+    background: transparent;
+    border: 1px solid var(--rule);
+    padding: 6px 14px;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 12px;
+    letter-spacing: 2px;
+    font-family: inherit;
+    border-radius: 1px;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .history-toolbar button:hover {
+    color: var(--vermillion); border-color: var(--vermillion);
+    background: rgba(154,52,52,.04);
+  }
+  .history-toolbar button.danger:hover {
+    color: #fff; background: var(--vermillion); border-color: var(--vermillion);
+  }
+  .history-count-pill {
+    font-size: 11px; color: var(--ink-faint);
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    letter-spacing: 1px;
+  }
+  /* 自动轮阶段进度条 */
+  .stage-bar{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px;margin:0 0 16px;padding:10px 12px;border:1px solid var(--rule);border-radius:10px;background:var(--paper);font-size:12.5px;line-height:1.5;box-shadow:0 10px 16px -12px rgba(31,28,23,.35);}
+  .stage-chip{padding:3px 10px;border-radius:999px;color:#a59c90;white-space:nowrap;transition:all .2s;}
+  .stage-chip.done{color:#5f7a55;}
+  .stage-chip.done::before{content:'\2713 ';}
+  .stage-chip.active{background:var(--vermillion);color:#fff;font-weight:600;box-shadow:0 0 0 3px rgba(154,52,52,.15);}
+  .stage-chip.active::after{content:'';display:inline-block;width:6px;height:6px;margin-left:6px;border-radius:50%;background:#fff;animation:runpulse 1s infinite;vertical-align:middle;}
+  .stage-chip.done{transition:color .25s;}
+  .stage-arrow{color:#d8cfc1;font-size:11px;}
+  .auto-internal{display:none;}
+  /* 输出区顶部「处理中」横幅(全程可见,别让用户以为卡死) */
+  .run-banner{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:9px;margin:0 0 16px;padding:9px 15px;border:1px solid var(--rule);border-radius:8px;background:var(--paper);font-size:13px;color:var(--vermillion);box-shadow:0 10px 16px -12px rgba(31,28,23,.35);}
+  .run-dot{width:8px;height:8px;border-radius:50%;background:var(--vermillion);animation:runpulse 1s infinite;flex:none;}
+  @keyframes runpulse{0%,100%{opacity:.25}50%{opacity:1}}
+</style>
+</head>
+<body>
+
+<!-- ============ 登录页 ============ -->
+<div id="loginStage" class="login-stage">
+  <div class="login-card">
+    <h1 class="login-title">改 · 文</h1>
+    <p class="login-sub">NOVEL  /  REWRITE  /  V0.1</p>
+
+    <div class="field">
+      <label>用户名</label>
+      <input id="loginUser" type="text" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input id="loginPass" type="password" autocomplete="current-password" />
+    </div>
+
+    <div id="loginErr" class="login-err"></div>
+
+    <button id="loginBtn" class="btn-primary">登 录</button>
+  </div>
+</div>
+
+<!-- ============ 主工作台 ============ -->
+<div id="app" class="app">
+
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <div class="brand"><span class="brand-mark">改</span><span>改文</span></div>
+    <div class="spacer"></div>
+    <div class="meta">
+      <span>积分 <b id="metaPoints">--</b></span>
+      <span id="metaUser">--</span>
+    </div>
+    <button class="icon-btn" id="menuToggle" title="菜单">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+    </button>
+    <div id="menuPop" class="menu-pop">
+      <button id="menuRefresh">刷新模型列表</button>
+      <hr/>
+      <button id="menuLogout">退出登录</button>
+    </div>
+  </div>
+
+  <!-- 控制条 -->
+  <div class="controls">
+    <div id="routerPill" class="router-pill" title="路由模型按模型标识 script-reasoning-step13888 调用,负责反问/编排/按 load_kb 加载知识库">
+      <span class="router-pill-tag">路由</span>
+      <span id="routerPillName" class="router-pill-name">改文路由</span>
+    </div>
+    <!-- 旧的模型下拉框保留在 DOM 但隐藏,避免引用断裂;路由由 ROUTER_MODEL_KEY 模型标识锁死 -->
+    <select id="modelSelect" class="model-select" style="display:none">
+      <option value="178">178</option>
+    </select>
+    <!-- 风格预设下拉 + 提示词编辑钮 也隐藏 — 178 的系统提示词在后端,前端不再拼任何风格壳 -->
+    <select id="styleSelect" class="model-select" title="选择改写风格" style="display:none; max-width:220px">
+      <option value="">加载风格…</option>
+    </select>
+    <button id="viewPromptBtn" class="icon-btn" title="查看当前风格的提示词" style="display:none">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    </button>
+    <div class="spacer" style="flex:1"></div>
+    <button id="historyBtn" class="btn-ghost" title="查看之前的对话历史(自动保存在本地浏览器)">历 史</button>
+    <button id="newSessionBtn" class="btn-ghost" title="清空原文与译文,开始全新的一篇(当前对话会被清掉)">新 会 话</button>
+    <button id="stopBtn" class="btn-stop">中 止</button>
+    <button id="goBtn" class="btn-go">开 始 改 文</button>
+  </div>
+
+  <!-- 双栏工作区 -->
+  <div class="workspace">
+    <div class="pane">
+      <div class="pane-head">
+        <span>原文 · ORIGIN</span>
+        <div class="pane-actions">
+          <span class="count" id="inputCount">0 字</span>
+          <button class="pane-action" id="importBtn" type="button"
+                  title="从文件导入到原文(支持 .txt / .md / .docx)">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 4v12"/><path d="M6 10l6 6 6-6"/><path d="M4 20h16"/>
+            </svg>
+            <span>导 入</span>
+          </button>
+        </div>
+      </div>
+      <div class="pane-body">
+        <textarea id="inputText" placeholder="把你的原文粘到这里……&#10;&#10;支持长文,无字符上限(实际容量取决于后端模型上下文窗口)。"></textarea>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="pane">
+      <div class="pane-head">
+        <span>改后 · REVISED</span>
+        <div class="pane-actions">
+          <span class="count" id="outputCount">0 字</span>
+          <button class="pane-action" id="exportBtn" type="button"
+                  title="把改后的内容导出为文件" aria-haspopup="true" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 20V8"/><path d="M6 14l6-6 6 6"/><path d="M4 4h16"/>
+            </svg>
+            <span>导 出</span>
+          </button>
+        </div>
+        <div id="exportMenu" class="io-menu" role="menu">
+          <div id="exportScopeSection" style="display:none">
+            <div class="io-menu-section" id="exportScopeHint">导出范围</div>
+            <button type="button" class="io-menu-radio" data-scope="selection" role="menuitemradio">
+              <span class="dot"></span>
+              <span class="label" id="exportScopeSelLabel">仅导出选中</span>
+              <span class="ext" id="exportScopeSelCount">0 字</span>
+            </button>
+            <button type="button" class="io-menu-radio" data-scope="all" role="menuitemradio">
+              <span class="dot"></span>
+              <span class="label" id="exportScopeAllLabel">导出全部</span>
+              <span class="ext" id="exportScopeAllCount">0 字</span>
+            </button>
+            <hr class="io-menu-hr"/>
+          </div>
+          <button type="button" data-fmt="txt"  role="menuitem">纯文本<span class="ext">.txt</span></button>
+          <button type="button" data-fmt="md"   role="menuitem">Markdown<span class="ext">.md</span></button>
+          <button type="button" data-fmt="docx" role="menuitem">Word 文档<span class="ext">.docx</span></button>
+          <button type="button" data-fmt="html" role="menuitem">HTML 网页<span class="ext">.html</span></button>
+        </div>
+      </div>
+      <div class="pane-body">
+        <div id="outputText"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div class="statusbar" id="statusbar">
+    <span class="dot"></span>
+    <span id="statusText">就绪</span>
+    <span class="spacer"></span>
+    <span id="statusExtra"></span>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- 导入用的隐藏 file input -->
+<input id="importFileInput" type="file"
+       accept=".txt,.md,.markdown,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+       style="display:none" />
+
+<!-- 提示词查看/编辑弹窗 -->
+<div id="promptModal" class="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span id="promptModalTitle">提示词</span>
+      <button class="icon-btn" id="promptModalClose" title="关闭">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-hint" id="promptModalHint">此提示词会自动拼到原文前面，一起发送给模型。</p>
+      <textarea id="promptModalText" spellcheck="false"></textarea>
+    </div>
+    <div class="modal-foot">
+      <span id="promptModalCount" class="modal-count">0 字</span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn-ghost" id="promptModalReset">恢复默认</button>
+      <button class="btn-primary-sm" id="promptModalSave">保 存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 历史记录弹窗(本地浏览器存储) -->
+<div id="historyModal" class="modal history-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span>历 史 记 录</span>
+      <button class="icon-btn" id="historyModalClose" title="关闭">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="historyList" class="history-list"></div>
+    </div>
+    <div class="history-toolbar">
+      <span id="historyCount" class="history-count-pill">0 条</span>
+      <span class="spacer"></span>
+      <button id="historyImportBtn" type="button" title="从备份 JSON 还原历史">导入备份</button>
+      <button id="historyExportBtn" type="button" title="把所有历史打包成 JSON 下载">导出备份</button>
+      <button id="historyClearBtn"  type="button" class="danger" title="删除所有历史(不可恢复)">清 空</button>
+    </div>
+  </div>
+</div>
+
+<!-- 历史 JSON 备份导入 -->
+<input id="historyImportInput" type="file" accept=".json,application/json" style="display:none" />
+
+<script src="kb-data.js"></script>
+<script>
+/* =================================================================
+ *  改文 · 桌面客户端  V0.1
+ *  单文件 HTML，直接用浏览器打开即可。
+ *  调用后端：ThinkPHP 6 的 AI 创作平台
+ * ================================================================= */
+
+const $ = id => document.getElementById(id);
+
+/* ---------- 持久化 ---------- */
+const LS = {
+  // 服务器地址写死，用户不用填、也看不到
+  get server()  { return 'https://mj.api.meidawenhua.com'; },
+  get token()   { return localStorage.getItem('nr_token')   || ''; },
+  set token(v)  { v ? localStorage.setItem('nr_token', v) : localStorage.removeItem('nr_token'); },
+  get user()    { try { return JSON.parse(localStorage.getItem('nr_user') || 'null'); } catch { return null; } },
+  set user(v)   { v ? localStorage.setItem('nr_user', JSON.stringify(v)) : localStorage.removeItem('nr_user'); },
+  get username(){ return localStorage.getItem('nr_username') || ''; },
+  set username(v){ localStorage.setItem('nr_username', v); },
+  get modelId() { return localStorage.getItem('nr_model_id') || ''; },
+  set modelId(v){ v ? localStorage.setItem('nr_model_id', v) : localStorage.removeItem('nr_model_id'); },
+  get styleId() { return localStorage.getItem('nr_style_id') || 'deslop_std'; },
+  set styleId(v){ localStorage.setItem('nr_style_id', v || ''); },
+  /** 用户自定义提示词的覆盖版本（key 是预设 id） */
+  getStyleOverride(id) {
+    return localStorage.getItem('nr_style_override_' + id) || '';
+  },
+  setStyleOverride(id, v) {
+    if (v) localStorage.setItem('nr_style_override_' + id, v);
+    else   localStorage.removeItem('nr_style_override_' + id);
+  },
+};
+
+/* ---------- 改写风格预设 ----------
+ * 每个 preset 是一段拼到原文前面的提示词。
+ * 提取自三个 skill 包的核心规则（精简版）。
+ */
+const STYLE_PRESETS = {
+  none: {
+    label: '不使用风格（裸调）',
+    prompt: ''
+  },
+  deslop_std: {
+    label: '去AI味 · 通用版',
+    prompt:
+`你是一位中文改写编辑。请把下面【原文】按以下规则改写，只修补 AI 痕迹，保留原意、信息密度和段落结构。
+
+【硬门槛 - 必须遵守】
+1. 二分对照壳：清零"而是"以及"不是/并非/不在于 A 而是 B"类结构
+2. 全角冒号"："全文 ≤ 2，且只用于直接引语，不要用作"概念：解释"
+3. 二人称：默认不用"你/你会"，"你会"必须为 0
+4. 一人称："我"按题材判断，不主动注入原文没有的"我"
+5. 路标词：更关键 / 更要命 / 换句话说 / 事实上 / 值得注意 / 总之 / 与此同时——全文合计 ≤ 2
+6. 协作口吻：清零"作为AI / 截至我的知识 / 希望这能帮助你 / 接下来我们将 / 我们先来看 / 下面我们"
+7. 伪口语化与讲义动作：删掉"拆一拆 / 盘一盘 / 捋一捋 / 聊一聊 / 划重点 / 敲黑板"，以及"说白了 / 本质上 / 归根结底 / 简单来说"这类降维引导
+8. AI 高频隐喻：噪音 / 信号 / 底色 / 光谱 / 滤镜 / 解药 / 土壤 / 拼图 / 镜像 / 路径 / 窗口 / 缩影——比喻义命中即改，字面义不管
+9. 高频分析词与术语壳：拆解 / 梳理 / 剖析 / 解构 / 聚焦 / 洞察 / 深耕 / 赋能 / 助力 / 践行 / 驱动 / 构建 / 打造——不要堆叠；舆论场 / 宏大叙事 / 底层逻辑 / 赛道 / 闭环 / 抓手 等伪学术词 ≤ 1
+10. 高频句式壳："一旦……就……" / "只有……才……" / "无论……都……" / "随着……的发展" / "正是因为……所以……" / "通过……来……"——全文 ≤ 2
+11. 戏剧化揭露与极值判断：清零"遮羞布 / 面具 / 外衣 / 揭开真面目 / 戳穿真相"；"最……的地方在于 / 真正……的是 / ……之处在于 / 更……的是" ≤ 1，且必须紧跟事实
+12. 定义式判断堆叠："A 是 B" / "A 不是 B" / "所谓 A 即 B" / "A 就是/意味着/可以概括为 B"——全文合计 ≤ 3，每处都要有事实或机制支撑
+
+【改写原则】
+- 保真改写：不增删事实/数据/案例/结论，不删除原文核心论证链
+- 修最少的字达到效果：能改一个词不改一句，能删一句不重写一段
+- 把模板句改成事实句：删"值得注意的是"保留信息本体；删"不是 A 而是 B"，直接写 B 再补机制
+- 保持段落数量与对应关系，不要重排合并或拆分
+
+【输出】
+直接输出改写后的正文。不要任何解释、过程、清单、自检，不要"以下是改写后的版本"这类话。`
+  },
+  deslop_novel: {
+    label: '去AI味 · 网文风',
+    prompt:
+`你是网文润色专家。把下面【原文】改写得自然、口语化、不像 AI 写的。
+
+【核心信念】
+AI 味的主要问题不是语法错误，而是过度圆滑、工整、解释充分。改写目标：保留剧情功能，同时增加口语、停顿、跳跃和具体动作。
+
+【自然 vs AI 味 对照】
+- 段落长度：自然文本 1-3 句为主，偶尔 1 句独占 1 行；AI 味是每段 4-6 句、整齐均匀
+- 对话标签：自然文本 60%+ 无标签，用动作替代"说"；AI 味几乎每句都有"说道/问道"
+- 情绪表达：自然用动作展示（"手在抖"）；AI 味直接告诉（"很紧张"）
+- 比喻：自然生活化（"像哈士奇护食"）；AI 味文学化（"如寒冰般"）
+- 语气词：自然有"嘤/嘶/靠/行吧"；AI 味几乎没有
+- 省略：自然大量省略让读者脑补；AI 味面面俱到生怕读者不懂
+- 排比：自然偶尔 1-2 个，从不连续 3+；AI 味连续 3-5 个是标配
+- 结尾：自然用动作或对话收尾；AI 味总结/升华/感慨收尾
+
+【红线 - 不可破】
+- 不得整段删除正文内容
+- 不新增原文没有的剧情、设定、角色、关系或时间线
+- 删除比例 ≤ 25%
+- 人名、地名、数字、章节名、专有名词优先保留
+- 如果某段疑似 AI 味但删了会破坏剧情，宁可保留也不删
+
+【输出】
+直接输出改写后的正文。不要解释、不要前言后语、不要标注章节标题（除非原文有）。`
+  },
+  custom: {
+    label: '自定义提示词…',
+    prompt: ''   // 用户自己写
+  }
+};
+
+/** 获取某 preset 的实际 prompt（考虑用户自定义覆盖） */
+function getPresetPrompt(id) {
+  const override = LS.getStyleOverride(id);
+  if (override) return override;
+  return STYLE_PRESETS[id] ? STYLE_PRESETS[id].prompt : '';
+}
+
+/* =====================================================
+ *  路由模型 ID(固定 178)
+ *  178 = 「写作技能-系统提示与前端路由」
+ *  它的系统提示(v3.4+)覆盖完整的两大体系:
+ *    A 大类:文风复刻 & 去 AI 味(A1 / A2 / A3 子路径)
+ *    B 大类:短剧改文(完整串跑 170→172→174→175→176→177→180→171→179→169)
+ *  负责:
+ *    1. 意图分流(强制反问,零脑补)
+ *    2. 一轮一个 <load_model> 纪律(绝对不允许同轮多标签)
+ *    3. 去重(LOADED_SET):已加载过的 ID 不再重发
+ *    4. B 路径阶段性产出节奏(每个阶段最后一个 ID 回喂后,先产出该阶段成果)
+ *    5. 全部就绪后自己写终稿
+ *  前端永远只把 178 当 router 用,不让用户选。
+ * ===================================================== */
+// 路由按「模型标识」调用(不再依赖数字 ID —— 测试/正式环境 ID 会串)。
+// 这串就是后端「编辑模型」弹窗里「模型标识」字段的值,跟着模型走、不会乱。
+const ROUTER_MODEL_KEY  = 'script-reasoning-step13888';
+const ROUTER_MODEL_NAME = '改文路由';
+// 后端 reasoning-stream 的 modelId 字段只认数字 ID。我们用上面的「模型标识」
+// 去模型列表里查出当前环境真实的数字 ID,缓存在这里,实际调用传它。
+// 这样配置端写死的是稳定的模型标识,跨测试/正式环境自动对到各自的数字 ID。
+let ROUTER_CALL_ID = null;
+
+/* =====================================================
+ *  模型字典(router → 子模型 编排白名单)
+ *  说明:router(你下拉框里选的那个模型)的系统提示是写作技能总入口(v3.4+),
+ *        它每轮输出一个 <load_model>X</load_model>,前端拿 X 在这里查,
+ *        查得到才会去调对应子模型;查不到直接报错并停止编排。
+ *  注意:每一项只描述这一个模型自己,不引用别的 ID。
+ *
+ *  B 路径完整串跑顺序(v3.4):170 → 172 → 174 → 175 → 176 → 177 → 180 → 171 → 179 → 169
+ *  阶段名(用于用户可见状态条):
+ *    170          → 题材定位
+ *    172/174/175/176 → 整剧规划
+ *    177          → 人物/反派设计
+ *    180          → 状态追踪与连续性自检(v3.4 新增,堵道具乱跳)
+ *    171          → 分集目录/钩子大纲
+ *    179          → 逐集剧本细化
+ *    169          → 合规自检
+ * ===================================================== */
+const MODEL_DICTIONARY = {
+  160: { name: 'AI痕迹检测',            group: 'style_replication', subSkill: 'good_writing'   },
+  161: { name: '标注范例库',            group: 'style_replication', subSkill: 'good_writing'   },
+  162: { name: '翻译护栏',              group: 'style_replication', subSkill: 'good_writing',   conditional: 'translation_only' },
+  163: { name: '风格 DNA 详解',         group: 'style_replication', subSkill: 'good_writing'   },
+  164: { name: '翻译护栏增量版',        group: 'style_replication', subSkill: 'de_ai_writing',  conditional: 'translation_only' },
+  165: { name: '范例库(带边界声明)',     group: 'style_replication', subSkill: 'de_ai_writing'  },
+  166: { name: '风格底座',              group: 'style_replication', subSkill: 'de_ai_writing'  },
+  167: { name: 'AI痕迹检测(引用版)',     group: 'style_replication', subSkill: 'de_ai_writing'  },
+  168: { name: '风格 DNA(引用版)',       group: 'style_replication', subSkill: 'de_ai_writing'  },
+  169: { name: '合规自检清单',          group: 'short_drama',       command: '/compliance' },
+  170: { name: '题材指南',              group: 'short_drama',       command: '/start'      },
+  171: { name: '钩子设计手册',          group: 'short_drama',       command: '/episode'    },
+  172: { name: '开篇黄金法则',          group: 'short_drama',       command: '/plan'       },
+  179: { name: '分集细化引擎',          group: 'short_drama',       command: '/detail'     },
+  174: { name: '付费卡点设计',          group: 'short_drama',       command: '/plan'       },
+  175: { name: '节奏曲线',              group: 'short_drama',       command: '/plan'       },
+  176: { name: '爽点矩阵',              group: 'short_drama',       command: '/plan'       },
+  177: { name: '反派设计体系',          group: 'short_drama',       command: '/characters' },
+  180: { name: '状态追踪与连续性自检',   group: 'short_drama',       command: '/episode'    },
+  // ↑ 180 是 B 路径完整串跑里的强制中间节点(177 → 180 → 171),
+  //   也是 /episode、/detail、/compliance 三条斜杠命令的前置步。
+  //   职责:把人物表落进 YAML 状态总账(characters/props/secrets/foreshadowing/timeline),
+  //        声明三大连续性自检规则(道具瞬移 / 人物穿墙 / 知识穿越),
+  //        供 171/179/169 强制执行,堵住"道具乱跳"这类典型 bug。
+  //   command 字段填 /episode 是因为这是 180 在斜杠模式下最常被触达的入口;
+  //   /detail 和 /compliance 也会前置触发 180,但走的是去重逻辑(详见 178 系统提示)。
+};
+
+/** group 友好名(用于分隔条文案) */
+const GROUP_LABEL = {
+  style_replication: '文风',
+  short_drama:       '短剧',
+};
+
+/** 编排循环最多多少轮(保护，防模型死循环)。
+ *  混合自动模式:开头反问由用户手动答,确认完之后整条链(题材→规划→人物→
+ *  状态→分集→细化→审校5轮→合规)在同一次 runOrchestration 里一气跑完,
+ *  含细化分批 / 审校5轮 / 完整修正版分批,80 集规模约 60–90 轮,280 留足冗余。 */
+const MAX_ORCH_ROUNDS = 280;
+
+/* ============ 一步一停(回到原 skill 交互式)总开关 ============
+ *  true  = 每个斜杠命令加载完知识库、产出一份完整产物后**立即停下、弹回复框**,等用户下一个命令;
+ *          连贯性靠 continueRewrite 在阶段一累积「历史+上一轮产出+用户回复」喂回 178。
+ *  false = 旧的 v4.2「自动跑到底」:加载过一次库后,产出轮自动塞「继续」一路串到合规定稿。
+ *  与之配套的 178 路由提示词必须是交互式(一命令一产物即停、不自动串、不发 ===全剧本=== 整本标记)。*/
+const STEP_BY_STEP = true;
+
+/** 自动推进:流程已经启动(至少加载过一个知识库)后,路由产出一个阶段成果却
+ *  没发加载指令时,前端自动塞回去的「继续」消息 —— 等价于用户手动点【继续】。
+ *  一句话同时覆盖:阶段推进 / 细化分批 / 审校选择 / 完整修正版分批。
+ *  带「自动直跑模式」字样,让 v3.9 路由提示词据此不把它误判成实质指令而停下。 */
+const AUTO_CONTINUE_MSG =
+  '继续。这一轮之后进入自动直跑模式,不需要再等我确认:' +
+  '如果你在问要修复哪些问题,默认全部修复;' +
+  '如果在问是否进入下一阶段、是否继续批量输出剧本,默认继续;' +
+  '一路按完整流程跑到合规自检结束为止。';
+
+/** 判断某一轮(没有 load_model 的产出轮)是不是「整个流程已经跑完」。
+ *  命中 → 自动推进停下,不再继续塞「继续」,避免在终点后空转烧积分。 */
+function looksFlowComplete(text) {
+  if (!text) return false;
+  const t = text.length > 800 ? text.slice(-800) : text;
+  if (/(全部|整个|整套)?\s*(流程|短剧改编|改编流程)\s*(已)?(到此|全部)?\s*(结束|完成|跑完|走完|收官)/.test(t)) return true;
+  if (/(没有|无)\s*(下一步|更多|后续)\s*(内容|阶段|流程|要做的)?/.test(t)) return true;
+  if (/已经?\s*(全部|到此)\s*(完成|结束)了?/.test(t)) return true;
+  if (/合规自检\s*(报告)?\s*(已)?\s*(完成|结束|通过|交付完毕)/.test(t)
+      && /(全部|整个|整套|流程|收官|跑完|到此)/.test(t)) return true;
+  return false;
+}
+
+
+/* ---------- 通用工具 ---------- */
+/** 把字符串里的 HTML 特殊字符转义,供 innerHTML 安全拼接用 */
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toast(msg, type) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type === 'error' ? ' error' : '');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => t.className = 'toast', 2400);
+}
+
+function setStatus(text, type, extra) {
+  $('statusText').textContent = text;
+  $('statusExtra').textContent = extra || '';
+  $('statusbar').className = 'statusbar' + (type ? ' ' + type : '');
+}
+
+/* ---------- 输出区"贴底"滚动控制 ----------
+ * 默认输出会跟着流式内容滚到底;但只要用户自己往上滚去回看,
+ * 就解除"贴底",新内容不再把视图顶回底部。用户重新滚回底部附近时,
+ * 自动恢复"贴底"。所有自动滚动一律走 maybeScroll(),不再直接改 scrollTop。*/
+let _stickBottom = true;            // 当前是否处于"贴底"状态
+const _STICK_SLACK = 60;            // 距底 60px 以内都算"在底部"
+
+function _outputPane() {
+  const o = document.getElementById('outputText');
+  return o ? o.parentElement : null;   // .pane-body 是真正的滚动容器
+}
+/** 判断滚动容器当前是否贴在(或非常接近)底部 */
+function _isAtBottom(pane) {
+  return pane.scrollHeight - pane.scrollTop - pane.clientHeight <= _STICK_SLACK;
+}
+/** 只有在"贴底"状态时才把视图滚到底;用户上翻回看时不打扰 */
+function maybeScroll() {
+  const pane = _outputPane();
+  if (!pane) return;
+  if (_stickBottom) pane.scrollTop = pane.scrollHeight;
+  updateToBottomFab();   // 内容增长但用户在上方时,显示「跳到底部」箭头
+}
+/** 强制滚到底并恢复"贴底"(用于用户主动发起新一轮等明确场景) */
+function forceScrollBottom() {
+  const pane = _outputPane();
+  if (!pane) return;
+  _stickBottom = true;
+  pane.scrollTop = pane.scrollHeight;
+  updateToBottomFab();
+}
+/** 绑定一次:监听用户滚动,动态维护 _stickBottom */
+function bindOutputScrollWatch() {
+  const pane = _outputPane();
+  if (!pane || pane._stickWatchBound) return;
+  pane._stickWatchBound = true;
+
+  ensureToBottomFab(pane);   // 创建右下角「跳到底部」浮动箭头
+
+  pane.addEventListener('scroll', () => {
+    // 用户滚到底部附近 → 恢复贴底;离开底部 → 解除贴底
+    _stickBottom = _isAtBottom(pane);
+    updateToBottomFab();
+  }, { passive: true });
+}
+
+/** 确保「跳到底部」箭头存在(挂在滚动容器的父级 .pane 上,固定在右下角) */
+function ensureToBottomFab(pane) {
+  const host = pane.parentElement;        // .pane(已设 position:relative)
+  if (!host || document.getElementById('toBottomFab')) return;
+  const fab = document.createElement('button');
+  fab.id = 'toBottomFab';
+  fab.className = 'to-bottom-fab';
+  fab.type = 'button';
+  fab.title = '跳到最新内容';
+  fab.setAttribute('aria-label', '跳到底部');
+  fab.textContent = '↓';
+  fab.addEventListener('click', () => { forceScrollBottom(); });
+  host.appendChild(fab);
+}
+
+/** 根据是否贴底决定箭头显隐:下方还有没看到的内容(未贴底)才显示 */
+function updateToBottomFab() {
+  const pane = _outputPane();
+  const fab = document.getElementById('toBottomFab');
+  if (!pane || !fab) return;
+  fab.classList.toggle('show', !_isAtBottom(pane));
+}
+
+/** 拼接接口完整 URL，去掉服务器地址末尾的斜杠 */
+function apiUrl(path) {
+  const base = LS.server.replace(/\/+$/, '');
+  return base + path;
+}
+
+/** 标准 JSON 请求 */
+async function apiFetch(path, opts = {}) {
+  const headers = Object.assign(
+    { 'Content-Type': 'application/json' },
+    opts.headers || {}
+  );
+  if (LS.token) headers['Authorization'] = 'Bearer ' + LS.token;
+
+  const res = await fetch(apiUrl(path), {
+    method: opts.method || 'GET',
+    headers,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+
+  let data;
+  try { data = await res.json(); } catch { data = null; }
+
+  if (!res.ok) {
+    const msg = (data && (data.message || data.msg)) || ('HTTP ' + res.status);
+    if (res.status === 401) { logout(); throw new Error('登录已过期，请重新登录'); }
+    throw new Error(msg);
+  }
+  // ThinkPHP 习惯：code 0 = 成功
+  if (data && typeof data.code !== 'undefined' && data.code !== 0) {
+    throw new Error(data.message || data.msg || '接口错误');
+  }
+  return data ? (data.data !== undefined ? data.data : data) : null;
+}
+
+/* =====================================================
+ *  登录 / 登出
+ * ===================================================== */
+async function doLogin() {
+  const username = $('loginUser').value.trim();
+  const password = $('loginPass').value;
+
+  if (!username) return showLoginErr('请填写用户名');
+  if (!password) return showLoginErr('请填写密码');
+
+  $('loginBtn').disabled = true;
+  $('loginBtn').textContent = '登 录 中 …';
+
+  try {
+    const data = await apiFetch('/api/c/auth/login', {
+      method: 'POST',
+      body: { username, password },
+    });
+    if (!data || !data.token) throw new Error('返回数据异常');
+    LS.token = data.token;
+    LS.user  = data.user;
+    LS.username = username;
+    showLoginErr('');
+    enterApp();
+  } catch (e) {
+    showLoginErr(e.message || '登录失败');
+  } finally {
+    $('loginBtn').disabled = false;
+    $('loginBtn').textContent = '登 录';
+  }
+}
+
+function showLoginErr(msg) {
+  const el = $('loginErr');
+  el.textContent = msg || '';
+  el.className = 'login-err' + (msg ? ' show' : '');
+}
+
+function logout() {
+  LS.token = '';
+  LS.user = null;
+  $('app').classList.remove('active');
+  $('loginStage').style.display = 'flex';
+  // 预填上次的信息
+  $('loginUser').value   = LS.username;
+  $('loginPass').value   = '';
+}
+
+/* =====================================================
+ *  进入主工作台
+ * ===================================================== */
+async function enterApp() {
+  $('loginStage').style.display = 'none';
+  $('app').classList.add('active');
+
+  // 显示用户信息
+  const u = LS.user || {};
+  $('metaUser').textContent = u.nickname || u.username || '-';
+  $('metaPoints').textContent = u.points !== undefined ? u.points : '--';
+
+  // 初始化风格下拉
+  loadStyles();
+
+  // 拉模型列表 + 刷新用户信息（积分可能变化）
+  loadModels();
+  refreshMe();
+
+  // 显示当前 style 的字符数提示
+  updateStyleInfo();
+}
+
+function loadStyles() {
+  const sel = $('styleSelect');
+  sel.innerHTML = '';
+  Object.entries(STYLE_PRESETS).forEach(([id, p]) => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = p.label;
+    sel.appendChild(opt);
+  });
+  // 恢复上次选择
+  if (LS.styleId && STYLE_PRESETS[LS.styleId]) {
+    sel.value = LS.styleId;
+  } else {
+    sel.value = 'deslop_std';
+  }
+}
+
+/** 状态栏右下角的字数提示。
+ *  前端不再往 content 里拼任何风格壳,所以这里只显示原文字数。 */
+function updateStyleInfo() {
+  const inputLen = $('inputText').value.length;
+  $('statusExtra').textContent = inputLen ? `原文 ${inputLen} 字` : '';
+}
+
+async function refreshMe() {
+  try {
+    const me = await apiFetch('/api/c/auth/me');
+    if (me) {
+      LS.user = me;
+      $('metaUser').textContent = me.nickname || me.username || '-';
+      if (me.points !== undefined) $('metaPoints').textContent = me.points;
+    }
+  } catch (e) { /* 静默 */ }
+}
+
+/** 用模型标识 ROUTER_MODEL_KEY 在后端模型列表里查出当前环境真实的数字 ID。
+ *  命中就缓存到 ROUTER_CALL_ID 并返回它;查不到返回 null。
+ *  匹配方式:遍历每个模型条目的所有字段值,只要有一个等于模型标识就算命中,
+ *  不依赖具体字段名(后端那个字段可能叫 model_id / flag / key 都行)。 */
+async function resolveRouterId() {
+  let list;
+  try { list = await apiFetch('/api/c/scripts/reasoning/models'); }
+  catch { list = await apiFetch('/api/c/create/reasoning/models'); }
+  const arr = Array.isArray(list) ? list
+            : (list && Array.isArray(list.list) ? list.list
+            : (list && Array.isArray(list.data) ? list.data : []));
+  // 先按模型标识匹配(扫每个条目所有字段值);列表里若没带标识字段,再退而按模型名称匹配
+  let router = arr.find(m => m && Object.values(m).some(v => String(v) === ROUTER_MODEL_KEY));
+  if (!router) router = arr.find(m => m && String(m.name) === ROUTER_MODEL_NAME);
+  if (router && router.id !== undefined && router.id !== null) {
+    ROUTER_CALL_ID = router.id;          // 当前环境真实数字 ID
+    return { id: router.id, name: router.name, points_cost: router.points_cost };
+  }
+  return null;
+}
+
+async function loadModels() {
+  // 启动时把「模型标识」解析成当前环境的数字 ID,并回填徽标名/积分。
+  // 解析不到只在徽标上提示(不弹致命错),实际能不能跑由首次调用兜底再解析一次。
+  const pill     = $('routerPill');
+  const pillName = $('routerPillName');
+  pill.classList.remove('miss');
+  pillName.textContent = ROUTER_MODEL_NAME;
+  try {
+    const r = await resolveRouterId();
+    if (r) {
+      const cost = r.points_cost !== undefined ? ` \u00B7 ${r.points_cost} 积分起` : '';
+      pillName.textContent = `${r.name || ROUTER_MODEL_NAME}${cost}`;
+      const sel = $('modelSelect');
+      if (sel) sel.value = String(ROUTER_CALL_ID);
+    } else {
+      pill.classList.add('miss');
+      pillName.textContent = `${ROUTER_MODEL_NAME} · 列表里没找到此模型标识`;
+      toast(`后端模型列表里没有模型标识 ${ROUTER_MODEL_KEY},请确认该模型已启用`, 'error');
+    }
+  } catch (e) {
+    console.warn('[loadModels] 模型列表加载失败:', e && e.message);
+  }
+}
+
+/* =====================================================
+ *  改文核心：router 编排 → 子模型一次一调
+ *
+ *  整体流：
+ *    1. 用下拉里选的 modelId 当 router，喂用户原文(+style prompt)
+ *    2. router 流式返回，本轮收完后扫 <load_model>X</load_model>
+ *    3. 没有 load_model    → 这一轮就是终稿，停下
+ *       有且仅有一个       → 调子模型 X，拿到内容回喂给 router
+ *       多于一个           → 告警，只执行第一个
+ *       不在白名单         → 报错停止
+ *    4. 直到 router 自己开始写正文为止
+ *
+ *  「一次只能调一个」在三处强制：
+ *    - 正则贪婪扫整段
+ *    - 多个时挂橙色告警条
+ *    - 一轮只取 ids[0]
+ * ===================================================== */
+let currentAbort = null;  // 当前 AbortController，跨轮共享，中止键能断当前正在跑的轮
+
+/** load_model 标签提取：返回 { ids:[...], cleanedText:去掉标签的文本 } */
+function extractLoadModel(text) {
+  const re = /<load_model>\s*(\d+)\s*<\/load_model>/g;
+  const ids = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    ids.push(parseInt(m[1], 10));
+  }
+  const cleanedText = text.replace(re, '').trim();
+  return { ids, cleanedText };
+}
+
+/* 旧数字 ID → 新 key 兼容映射(178 还没全切到 <load_kb> 时也能跑)。
+   只覆盖短剧串跑那几个;160-168(去AI味/文风子模型)不在前端知识库里,留空。 */
+const LEGACY_ID_MAP = {
+  169: 'compliance-checklist',
+  170: 'genre-guide',            // 已补回正版短剧题材指南(见 kb-data.js 末尾 window.KB['genre-guide'])
+  171: 'hook-design', 172: 'opening-rules', 174: 'paywall-design',
+  175: 'rhythm-curve', 176: 'satisfaction-matrix', 177: 'villain-design',
+  180: 'state-tracking',
+};
+
+/** 抠出要加载的知识库 key 列表。
+ *  主协议:<load_kb>key1,key2,…</load_kb>(可逗号分隔多个,支持一轮多库)。
+ *  兼容:旧 <load_model>123</load_model> 按 LEGACY_ID_MAP 翻成 key。
+ *  返回 { keys, cleanedText };keys 去重保序。 */
+function extractLoadKb(text) {
+  const keys = [], seen = new Set();
+  const push = k => { if (k && !seen.has(k)) { seen.add(k); keys.push(k); } };
+  const reKb = /<load_kb>\s*([^<]+?)\s*<\/load_kb>/g;
+  let m;
+  while ((m = reKb.exec(text)) !== null) m[1].split(/[,\uFF0C\s]+/).forEach(seg => push(seg.trim()));
+  const reOld = /<load_model>\s*(\d+)\s*<\/load_model>/g;
+  while ((m = reOld.exec(text)) !== null) { const k = LEGACY_ID_MAP[parseInt(m[1],10)]; if (k) push(k); }
+  const cleanedText = text.replace(reKb, '').replace(reOld, '').trim();
+  return { keys: keys, cleanedText: cleanedText };
+}
+
+/** 判断 router 这一轮是不是「嘴上说要继续 / 准备资料,却忘了发 <load_model> 标签」。
+ *  这种情况若按"没标签=终稿"处理,就会弹回复框把用户晾在那 —— 看着像卡住。
+ *  命中这些措辞 → 视为 router 漏发标签的停顿,前端自动催它一轮。
+ *
+ *  防误伤策略(2026-05 修):
+ *  1) 长输出不可能是 stall。真停顿都是「稍等,我马上给您加载 XX」这种短信号,
+ *     上千字的实质内容哪怕末尾带点 stall 措辞,也是有用的回答,不能被催。
+ *  2) 把「即将进入」从规则里删掉 —— 它在剧本/小说类内容里经常出现
+ *     (例「即将进入全剧的高潮」「即将进入第二阶段」),误判率太高。
+ *  3) stall 措辞必须出现在文本「末尾段」,前面段落里出现一律不算
+ *     —— 真停顿是 router 不知所措在那"我马上给您加载…",
+ *     而不是在文中间叙述。 */
+function looksLikeStalledRouter(text) {
+  if (!text) return false;
+  // 1) 长度门槛:超过 400 字的输出基本都是实质内容,不当 stall
+  if (text.length > 400) return false;
+  // 2) 收窄关键词:删去「即将…进入」
+  // 3) 只看末尾 80 字 —— stall 是"我马上加载 XX"这种结句信号
+  const tail = text.length > 80 ? text.slice(-80) : text;
+  const stallRe = /(请稍候|请稍等|稍候|稍等片刻|马上(为您|给您)?(准备|加载)|正在(为您|给您)?准备|正在加载|即将(为您)?(加载|准备)|接下来(我)?(会|将)?(加载|准备|调用)|让我(先)?(加载|准备|调用))/;
+  return stallRe.test(tail);
+}
+
+/** 从一个 SSE 事件里尽量挖出"正文增量文本",兼容各种后端返回形状:
+ *    "纯字符串"  /  {content}  /  {text}  /  {response}  /  {delta:"…"}
+ *    OpenAI: {choices:[{delta:{content}}]} / {choices:[{text}]} / {choices:[{message:{content}}]}
+ *    Anthropic: {delta:{text}}
+ *  挖不到就返回空串(不会把整个 JSON 当文本喷出来)。*/
+function extractDeltaText(ev) {
+  const d = ev && ev.data;
+  if (d == null) return '';
+  if (typeof d === 'string') return d;
+  if (typeof d.content  === 'string') return d.content;
+  if (typeof d.text     === 'string') return d.text;
+  if (typeof d.response === 'string') return d.response;
+  if (typeof d.delta    === 'string') return d.delta;
+  if (d.choices && d.choices[0]) {
+    const ch = d.choices[0];
+    if (ch.delta && typeof ch.delta.content === 'string') return ch.delta.content;
+    if (typeof ch.text === 'string') return ch.text;
+    if (ch.message && typeof ch.message.content === 'string') return ch.message.content;
+  }
+  if (d.delta && typeof d.delta.text === 'string') return d.delta.text;
+  return '';
+}
+
+/**
+ * 一次 reasoning-stream 调用 + SSE 解析的工具函数,带【自动重试】与【空闲超时检测】。
+ *
+ * 失败时最多自动重试 2 次(首次 + 重试 ×2 = 总计 3 次尝试)。重试时机:
+ *   1) fetch 抛错(网络异常 / 中间网关 5xx)
+ *   2) SSE 长连接 20s 内没有任何新数据(就是"卡死在请稍候"那种情况)
+ *   3) HTTP 5xx
+ * 不重试:
+ *   - 用户手动点了"中止"
+ *   - HTTP 4xx(鉴权失败 / 余额不足等,重试也不会变好)
+ *
+ * @param {Object} opts
+ *   - modelId:    {string|number} 要调用的模型 id
+ *   - content:    {string}        喂给该模型的输入
+ *   - renderEl:   {HTMLElement|null} 输出渲染到哪个 DOM(null 则不实时渲染)
+ *   - showCaret:  {boolean}       是否在 renderEl 末尾挂闪烁光标
+ *   - onDone:     {function|null} done 事件回调,接收 ev.data
+ *   - onCount:    {function|null} 实时字数回调(只有正文轮要传)
+ *   - typewriter: {boolean|undefined} 是否开打字机
+ * @returns {Promise<string>} 累积的正文输出(不含 think 部分)
+ */
+async function streamOneCall(opts) {
+  const MAX_RETRIES      = 2;      // 最多重试 2 次 → 共 3 次尝试
+  const IDLE_TIMEOUT_MS  = 60 * 1000;  // 1 分钟没收到任何新数据 → 当作卡死,触发重试
+
+  let lastErr = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // 第二次及之后:把上一次半截渲染的内容清掉,避免重复
+    if (attempt > 0) {
+      if (opts.renderEl) opts.renderEl.innerHTML = '';
+      console.warn(`[streamOneCall] 自动重试 ${attempt}/${MAX_RETRIES} (model=${opts.modelId}) ← ${lastErr && lastErr.message}`);
+      // 退避,给后端/网关喘口气
+      await new Promise(r => setTimeout(r, 500 * attempt));
+      // 退避期间用户点了中止 → 直接放弃
+      if (currentAbort && currentAbort.signal.aborted) {
+        throw new DOMException('aborted', 'AbortError');
+      }
+    }
+
+    try {
+      return await _streamOneCallOnce(opts, IDLE_TIMEOUT_MS);
+    } catch (e) {
+      lastErr = e;
+      // 1) 用户主动中止 → 不重试,直接抛
+      if (e.name === 'AbortError') throw e;
+      if (currentAbort && currentAbort.signal.aborted && !e._idleTimeout) throw e;
+      // 2) HTTP 4xx(401/403/402…重试也救不了)→ 不重试
+      if (/^HTTP 4\d\d/.test(e.message || '')) throw e;
+      // 3) 其它(网络异常 / 5xx / 空闲超时)→ 进入重试
+      if (attempt === MAX_RETRIES) throw e;
+    }
+  }
+  throw lastErr;  // 理论到不了
+}
+
+/** streamOneCall 的"单次尝试"内部实现。
+ *  和原版几乎一致,只多了:
+ *    1) 用一个 per-attempt 的 AbortController 接管 fetch / reader,
+ *       这样空闲超时只会取消当前这次尝试,不牵连整个编排的 currentAbort;
+ *       同时把用户的 currentAbort.abort() 转发给 attemptAbort,让用户中止仍然有效。
+ *    2) 每次 await reader.read() 之前重置 idle 计时器,
+ *       超过 IDLE_TIMEOUT_MS 没收到字节就当卡死,抛出带 _idleTimeout 的错误让外层重试。 */
+async function _streamOneCallOnce({ modelId, content, renderEl, showCaret, onDone, onCount, typewriter }, IDLE_TIMEOUT_MS) {
+  let outputBuffer = '';
+  let thinkBuffer  = '';
+  let thinkEl      = null;
+  let textNode     = null;     // renderEl 内部的实际文字节点
+  let caretEl      = null;
+
+  if (renderEl) {
+    textNode = document.createElement('span');
+    renderEl.appendChild(textNode);
+    if (showCaret) {
+      caretEl = document.createElement('span');
+      caretEl.className = 'caret';
+      renderEl.appendChild(caretEl);
+    }
+  }
+  const out = $('outputText');
+
+  /* ---------- 打字机:让正文一个字一个字从左往右冒出来 ---------- */
+  const useTypewriter = (typewriter !== undefined) ? typewriter : !!showCaret;
+  let shownLen = 0;
+  let twTimer  = null;
+  let drainResolve = null;
+  let readerDone = false;
+  const TICK_NORMAL = 16;
+  const TICK_FAST   = 6;
+  const TICK_RUSH   = 2;
+
+  function renderShown() {
+    if (textNode) textNode.textContent = outputBuffer.slice(0, shownLen);
+    if (onCount)  onCount(shownLen);
+    maybeScroll();
+  }
+  function tick() {
+    twTimer = null;
+    if (currentAbort && currentAbort.signal.aborted) { flushNow(); return; }
+    const backlog = outputBuffer.length - shownLen;
+    if (backlog <= 0) {
+      if (drainResolve) { const r = drainResolve; drainResolve = null; r(); }
+      return;
+    }
+    shownLen += 1;
+    renderShown();
+    let delay = TICK_NORMAL;
+    if (readerDone && backlog > 40)  delay = TICK_FAST;
+    if (readerDone && backlog > 600) delay = TICK_RUSH;
+    twTimer = setTimeout(tick, delay);
+  }
+  function ensureTyping() {
+    if (!twTimer && !(currentAbort && currentAbort.signal.aborted)) twTimer = setTimeout(tick, TICK_NORMAL);
+  }
+  function flushNow() {
+    if (twTimer) { clearTimeout(twTimer); twTimer = null; }
+    shownLen = outputBuffer.length;
+    renderShown();
+    if (drainResolve) { const r = drainResolve; drainResolve = null; r(); }
+  }
+  function pushPiece(piece) {
+    outputBuffer += piece;
+    if (!textNode) return;
+    if (useTypewriter) ensureTyping();
+    else flushNow();
+  }
+  function waitDrained() {
+    if (!useTypewriter || !textNode) { flushNow(); return Promise.resolve(); }
+    if (shownLen >= outputBuffer.length) return Promise.resolve();
+    return new Promise(res => { drainResolve = res; ensureTyping(); });
+  }
+
+  /* ---------- 单次尝试用的 AbortController + 空闲超时 ---------- */
+  const attemptAbort = new AbortController();
+  let idleTimer = null;
+  let idleTimedOut = false;
+  const armIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idleTimedOut = true;
+      try { attemptAbort.abort(); } catch {}
+    }, IDLE_TIMEOUT_MS);
+  };
+  // 用户点中止 → 把 currentAbort 转发给 attemptAbort,确保整轮立即停掉
+  const onUserAbort = () => { try { attemptAbort.abort(); } catch {} };
+  if (currentAbort) currentAbort.signal.addEventListener('abort', onUserAbort);
+
+  try {
+    armIdle();  // 在 fetch 之前先武装一次:连接都建不上也要超时
+
+    const res = await fetch(apiUrl('/api/c/scripts/reasoning-stream'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Authorization': 'Bearer ' + LS.token,
+      },
+      body: JSON.stringify({ modelId, content }),
+      signal: attemptAbort.signal,
+    });
+
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status;
+      try { const j = await res.json(); msg = j.message || j.msg || msg; } catch {}
+      throw new Error(msg);
+    }
+    if (!res.body) throw new Error('当前浏览器不支持流式响应');
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let leftover = '';
+
+    // 处理单个 SSE 事件块(delta / think / done / error)
+    function handleBlock(block) {
+      if (!block.trim()) return;
+      const ev = parseSSEBlock(block);
+      if (!ev) return;
+
+      if (ev.event === 'delta' || ev.event === 'message') {
+        const piece = extractDeltaText(ev);
+        if (piece) pushPiece(piece);
+      }
+      else if (ev.event === 'think') {
+        const piece = (ev.data && (ev.data.content || ev.data.text)) || '';
+        thinkBuffer += piece;
+        if (renderEl && !thinkEl) {
+          thinkEl = document.createElement('div');
+          thinkEl.className = 'think';
+          const lbl = document.createElement('span');
+          lbl.className = 'think-label';
+          lbl.textContent = '模型思考';
+          thinkEl.appendChild(lbl);
+          const body = document.createElement('span');
+          thinkEl.appendChild(body);
+          thinkEl._body = body;
+          renderEl.insertBefore(thinkEl, textNode);
+        }
+        if (thinkEl) thinkEl._body.textContent = thinkBuffer.replace(/<\/?think>/g, '');
+      }
+      else if (ev.event === 'done') {
+        if (onDone) onDone(ev.data || {});
+      }
+      else if (ev.event === 'error') {
+        throw new Error((ev.data && ev.data.message) || '接口返回错误');
+      }
+    }
+
+    try {
+      while (true) {
+        armIdle();  // 每读一次前重置空闲计时器:只要后端还在吐字节,就一直续命
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = leftover + decoder.decode(value, { stream: true });
+        const blocks = text.split(/\r?\n\r?\n/);
+        leftover = blocks.pop() || '';
+
+        for (const block of blocks) handleBlock(block);
+      }
+      if (leftover.trim()) handleBlock(leftover);
+      readerDone = true;
+      await waitDrained();
+    } finally {
+      if (twTimer) { clearTimeout(twTimer); twTimer = null; }
+      if (caretEl) caretEl.remove();
+    }
+
+    return outputBuffer;
+
+  } catch (e) {
+    // 空闲超时 → 包装成可重试错误抛给外层 streamOneCall
+    if (idleTimedOut) {
+      const secs = IDLE_TIMEOUT_MS / 1000;
+      const human = secs >= 60 ? `${secs / 60} 分钟` : `${secs}s`;
+      const err = new Error(`流式响应卡住:${human} 内无新数据`);
+      err._idleTimeout = true;
+      err.name = 'IdleTimeoutError';
+      throw err;
+    }
+    throw e;
+  } finally {
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    if (currentAbort) currentAbort.signal.removeEventListener('abort', onUserAbort);
+  }
+}
+
+/** 当前对话会话的状态（跨调用、跨"继续"按钮持续存在,直到下一次 startRewrite 重置）。
+ *  routerContent 是要喂给下一轮 router 的内容 —— 我们把"之前的全部 + 新输入"裸地接起来,
+ *  不加任何前端自写的提示词标签,router 的纪律由它自己的系统提示词管。 */
+let session = null;
+
+async function startRewrite() {
+  const content = $('inputText').value;
+  if (!content.trim()) { toast('原文还是空的呢', 'error'); return; }
+
+  // 178 模型在后端「系统提示词」字段里已经存了写作技能 A 段,
+  // 这里不在用户原文前面拼任何前端自写的提示词,直接裸调。
+  const baseContent = content;
+
+  // (已移除:原本这里有 baseContent.length > 100000 的硬阻断。)
+  // 前端不再设字符上限,真正的天花板在后端模型上下文窗口,由后端报错来兜底。
+
+  // 新会话 —— 清状态,清 UI
+  session = {
+    baseContent,
+    routerContent: baseContent,
+    // userConversation:干净的「用户视角」对话历史,供子模型(160-168, 169-172, 174-177, 179, 180)使用。
+    // 与 routerContent 的区别:不含 <load_model> 标签 / [回喂开始-结束] 标记 / 子模型回喂内容,
+    // 只累积「原文 + 历轮终稿 + 用户回复/引导」。
+    // 修复 Bug:之前子模型只收 baseContent,中间对话时看不到用户的新要求,导致上下文断裂。
+    userConversation: baseContent,
+    loadedIds: new Set(),
+    totalLoads: 0,         // 实际加载次数(包括重复加载) —— 用于状态显示
+    lastExecutedId: null,  // 上一次成功加载的子模型 ID
+                            // 每次给 router 发请求时,会把它作为 <load_model>X</load_model>
+                            // 标签拼到 content 末尾,让 178 一眼能看到「我刚才执行了哪个」
+    t0: Date.now(),
+    totalPointsCost: 0,
+    finalBalance: null,
+    lastRouterOutput: '',  // 用于"继续对话"时拼回上下文
+    stallNudges: 0,        // router「说要继续却没发 load_model」时,自动催它的次数
+    autoSteps: 0,          // 流程启动后,前端自动塞「继续」推进的次数
+    lastAutoOutput: '',    // 上一轮自动产出的内容,用于检测路由卡死打转
+    phase: 'auto',         // 'auto'=阶段一(反问+全自动跑完) | 'edit'=阶段二(对话修改)
+    scriptSnapshot: '',    // 阶段一跑完的全剧本快照;编辑态只带它 + 本次要求,不带历史
+    scriptBuf: '',         // 捕获带标记全剧本时的累积缓冲(支持分批输出)
+    capturing: false,      // 是否正在捕获 ===全剧本开始===…===全剧本结束===
+    editLog: [],           // 编辑轮(阶段二)的滚动对话历史 [{role:'user'|'assistant',text}];不含阶段一历史
+    stageIdx: -1,          // 自动轮阶段进度条当前高亮到第几阶段(0..7),-1=还没开始
+  };
+
+  $('outputText').innerHTML = '';
+  $('outputCount').textContent = '0 字';
+  _stickBottom = true;        // 新一轮从贴底开始
+  removeReplyBox();
+  removeNextStepPanel();
+
+  await runOrchestration({ statusOnStart: '正在发起请求' });
+}
+
+/** 新会话:中止在跑的请求,清空原文 + 译文 + 所有面板,回到初始就绪态。
+ *  与"开始改文"的区别:开始改文只重置右栏并保留左栏原文(方便基于同一篇继续改);
+ *  新会话则两栏都清空,等于完全开一篇新的。 */
+function newSession() {
+  if (currentAbort) currentAbort.abort();   // 把在跑的轮断掉
+  session = null;
+  $('inputText').value = '';
+  $('inputCount').textContent = '0 字';
+  $('outputText').innerHTML = '';
+  $('outputCount').textContent = '0 字';
+  _stickBottom = true;        // 新会话从贴底开始
+  removeReplyBox();
+  removeNextStepPanel();
+  $('goBtn').disabled = false;
+  $('stopBtn').classList.remove('show');
+  setStatus('就绪', '');
+  $('inputText').focus();
+  toast('已开启新会话');
+}
+
+
+async function continueRewrite(replyText) {
+  if (!session) { toast('没有进行中的对话,请先点开始改文', 'error'); return; }
+  const reply = (replyText || '').trim();
+  if (!reply) { toast('回复是空的', 'error'); return; }
+
+  // 把用户回复在输出区做一个视觉锚点
+  appendUserReplyToOutput(reply);
+
+  // —— 编辑态:带「当前全剧本 + 编辑轮滚动对话」,不带阶段一历史;178 可反问 ——
+  if (session.phase === 'edit') {
+    if (!session.editLog) session.editLog = [];
+    session.editLog.push({ role: 'user', text: reply });
+    session.routerContent    = buildEditRequest(session.scriptSnapshot, session.editLog);
+    session.userConversation = session.routerContent;
+    session.capturing = false; session.scriptBuf = '';
+    session.stallNudges = 0; session.autoSteps = 0; session.lastAutoOutput = '';
+    session.loadedIds = new Set(); session.totalLoads = 0;  // 编辑轮重置加载集合,允许按需重调单库
+    removeReplyBox(); removeNextStepPanel();
+    await runOrchestration({ statusOnStart: '处理修改…' });
+    return;
+  }
+
+  // 累积上下文:之前的 routerContent + router 上一轮的输出 + 用户回复
+  // 三段之间只用 \n\n 分隔,不带任何前端自写的 [系统提示] / [用户回复] / 「请继续」标签。
+  session.routerContent =
+    session.routerContent + '\n\n' +
+    session.lastRouterOutput + '\n\n' +
+    reply;
+
+  // 同步把这次的「上一轮终稿 + 用户回复」也并入干净的用户视角对话历史,
+  // 让下一轮调用的子模型能看到用户最新的要求,而不是只盯着最初的原文。
+  session.userConversation =
+    session.userConversation + '\n\n' +
+    session.lastRouterOutput + '\n\n' +
+    reply;
+  session.stallNudges = 0;   // 用户手动推进 —— 重置自动催促额度
+
+  removeReplyBox();
+  removeNextStepPanel();
+
+  await runOrchestration({ statusOnStart: '继续对话…' });
+}
+
+/** 构造给 router(178)的请求 content。
+ *
+ *  直接返回累积的 routerContent —— 其中已经在每次子模型加载完后,
+ *  把 <load_model>X</load_model> 标签写在子模型输出的**前面**,
+ *  这样 178 看到的结构是:
+ *
+ *     …前文…
+ *     <load_model>163</load_model>      ← 标签
+ *     {子模型 163 的输出}               ← 紧跟在标签后面 = 已回喂
+ *
+ *  178 扫到最后一个 <load_model> 标签时,能在其**后面**看到子模型输出,
+ *  从而正确判定「前端已回喂」,不会误以为还在等回喂而重复输出同一个 ID。 */
+function buildRouterRequestContent() {
+  return session.routerContent;
+}
+
+/* ============ 两阶段:全剧本快照 + 编辑态 ============ */
+const SCRIPT_BEGIN = '===全剧本开始===';
+const SCRIPT_END   = '===全剧本结束===';
+
+/** 编辑态请求体:当前全剧本 + 编辑轮滚动对话历史(用户↔你)。
+ *  只带这俩,不带阶段一(反问/题材/规划/注入的库正文)那一大堆历史。
+ *  对话历史最后一条「用户：」就是 178 这轮要回应的。 */
+function buildEditRequest(script, log) {
+  const convo = (log || []).map(t =>
+    (t.role === 'user' ? '用户：' : '你（上一轮）：') + t.text).join('\n\n');
+  return '【当前全剧本】\n' + (script || '') + '\n【当前全剧本·结束】\n\n' +
+         '【编辑对话｜最后一条「用户：」是你要回应的；要出新版剧本就用 ===全剧本开始===/===全剧本结束=== 包裹,只是聊/反问就别包】\n' +
+         convo;
+}
+
+/** 编辑轮里 178 没出新剧本(在反问/对话):记进 editLog,弹回复框等用户,不动快照。 */
+function editAwaitReply(out, routerOutput) {
+  session.lastRouterOutput = routerOutput;
+  if (!session.editLog) session.editLog = [];
+  const said = (routerOutput || '').trim();
+  if (said) session.editLog.push({ role: 'assistant', text: said });
+  clearRunBanner();
+  setStatus('等你回应', 'done');
+  showReplyBox();
+  maybeScroll();
+}
+
+/* ============ 自动轮阶段进度条(短剧 B 路径) ============ */
+const STAGE_NAMES = ['题材定位','整剧规划','人物设计','状态追踪','分集设计','剧本细化','全集审校','合规定稿'];
+const STAGE_KEY_MAP = {
+  'genre-guide':0,
+  'opening-rules':1,'paywall-design':1,'rhythm-curve':1,'satisfaction-matrix':1,
+  'villain-design':2,'state-tracking':3,'hook-design':4,'episode-detail':5,'compliance-checklist':7,
+};
+function stageForKeys(keys){ let idx=-1; for(const k of (keys||[])){ const v=STAGE_KEY_MAP[k]; if(v!==undefined) idx=Math.max(idx,v);} return idx; }
+function ensureStageBar(){
+  let bar=document.getElementById('stageBar');
+  if(bar) return bar;
+  const out=$('outputText');
+  bar=document.createElement('div'); bar.id='stageBar'; bar.className='stage-bar';
+  STAGE_NAMES.forEach((nm,i)=>{
+    const chip=document.createElement('span'); chip.className='stage-chip'; chip.dataset.i=i; chip.textContent=nm; bar.appendChild(chip);
+    if(i<STAGE_NAMES.length-1){ const a=document.createElement('span'); a.className='stage-arrow'; a.textContent='\u2192'; bar.appendChild(a); }
+  });
+  out.insertBefore(bar, out.firstChild);
+  return bar;
+}
+function setStageActive(idx){
+  if(idx<0) return;
+  const cur = (session.stageIdx===undefined?-1:session.stageIdx);
+  session.stageIdx = Math.max(cur, idx);
+  clearRunBanner();
+  const bar=ensureStageBar();
+  bar.querySelectorAll('.stage-chip').forEach(ch=>{ const i=+ch.dataset.i; ch.classList.toggle('active', i===session.stageIdx); ch.classList.toggle('done', i<session.stageIdx); });
+  setStatus('正在准备：'+(STAGE_NAMES[session.stageIdx]||''), 'busy');
+  maybeScroll();
+}
+function finishStageBar(){ const bar=document.getElementById('stageBar'); if(bar) bar.remove(); }
+/* 输出区顶部常驻「处理中」横幅:从一开跑就显示,确保对话区里一直有可见反馈 */
+function setRunBanner(text){
+  const out=$('outputText'); let b=document.getElementById('runBanner');
+  if(!b){ b=document.createElement('div'); b.id='runBanner'; b.className='run-banner'; out.insertBefore(b, out.firstChild); }
+  b.innerHTML=''; const dot=document.createElement('span'); dot.className='run-dot'; b.appendChild(dot);
+  b.appendChild(document.createTextNode(' '+text));
+}
+function clearRunBanner(){ const b=document.getElementById('runBanner'); if(b) b.remove(); }
+
+/** 捕获被 ===全剧本开始===…===全剧本结束=== 包裹的最终全剧本。
+ *  支持分批:178 分多轮吐时跨轮累积到 session.scriptBuf,见到结束标记才算完整。
+ *  返回 { started, done, script }。 */
+function feedScriptCapture(text) {
+  if (!session.capturing) {
+    const i = text.indexOf(SCRIPT_BEGIN);
+    if (i === -1) return { started: false, done: false };
+    session.capturing = true;
+    session.scriptBuf = text.slice(i + SCRIPT_BEGIN.length);
+  } else {
+    session.scriptBuf += text;
+  }
+  const j = session.scriptBuf.indexOf(SCRIPT_END);
+  if (j !== -1) {
+    const script = session.scriptBuf.slice(0, j).trim();
+    session.capturing = false;
+    return { started: true, done: true, script: script };
+  }
+  return { started: true, done: false };
+}
+
+/** 阶段一跑完 / 编辑态改完:落快照 + 弹回复框,进入(或留在)编辑态。 */
+function enterEditDone(out, routerOutput) {
+  clearRunBanner(); finishStageBar();
+  if (!session.editLog) session.editLog = [];
+  session.lastRouterOutput = routerOutput;
+  session.stallNudges = 0;
+  const dur  = ((Date.now() - session.t0) / 1000).toFixed(1);
+  const cost = session.totalPointsCost ? ('消耗 ' + session.totalPointsCost + ' 积分 · ') : '';
+  if (session.finalBalance !== null) $('metaPoints').textContent = session.finalBalance;
+  const len = (session.scriptSnapshot || '').length;
+  $('outputCount').textContent = len + ' 字';
+  const div = document.createElement('div');
+  div.className = 'load-divider done';
+  div.textContent = '全剧本已就绪 · ' + len + ' 字 · 下面直接说要怎么改';
+  out.appendChild(div);
+  setStatus('完成 · 进入修改', 'done', cost + '用时 ' + dur + 's');
+  try { _saveCurrentSessionToHistory(); } catch (e) { console.warn('[history] save failed', e); }
+  showReplyBox();
+  maybeScroll();
+}
+
+/** 可重入的编排循环。每次调用都从 session.routerContent 开始跑,
+ *  直到 router 不再发 <load_model> 为止;到那一步就保存 lastRouterOutput,弹出回复框。 */
+async function runOrchestration({ statusOnStart }) {
+  const out = $('outputText');
+  setStatus(statusOnStart, 'busy');
+  $('goBtn').disabled = true;
+  $('stopBtn').classList.add('show');
+
+  currentAbort = new AbortController();
+
+  try {
+    for (let round = 1; round <= MAX_ORCH_ROUNDS; round++) {
+      // === A. 跑一次 router ===
+      setStatus(`编排路由 · 第 ${round} 轮`, 'busy');
+      if (!document.getElementById('stageBar')) {
+        setRunBanner(round <= 1 ? '正在与写作模型沟通…' :
+          (session.totalLoads > 0 ? '处理中…（第 ' + round + ' 轮）'
+            : '正在确认需求…（第 ' + round + ' 轮）'));
+      }
+      // 字数清零,本轮从 0 开始跟着流式涨,避免跨轮跳变
+      $('outputCount').textContent = '0 字';
+
+      // 自动轮:router 的内部输出(<load_kb> 标签、阶段自检、(路由) 噪音)默认渲染到
+      // 隐藏元素,用户看不到;只在「反问/终稿」时再 reveal。编辑轮正常可见(要看反问/改写)。
+      const isEdit = session.phase === 'edit';
+      const routerEl = document.createElement('span');
+      routerEl.className = isEdit ? 'final-round' : 'auto-internal';
+      out.appendChild(routerEl);
+
+      // 首次/解析失败时,临时再用模型标识解析一次真实数字 ID(后端只认数字 ID)
+      if (ROUTER_CALL_ID === null) {
+        try { await resolveRouterId(); } catch (e) {}
+      }
+      if (ROUTER_CALL_ID === null) {
+        softAbort(out,
+          `没在后端模型列表里找到模型标识 ${ROUTER_MODEL_KEY} 对应的模型(可能未启用/标识写错)`,
+          '路由模型未解析到', '');
+        return;
+      }
+      const routerOutput = await streamOneCall({
+        modelId:  ROUTER_CALL_ID,   // 用解析出的当前环境数字 ID 调用
+        content:  buildRouterRequestContent(),
+        renderEl: routerEl,
+        showCaret: isEdit,
+        onDone: (d) => {
+          if (d.balance !== undefined)    session.finalBalance = d.balance;
+          if (d.pointsCost !== undefined) session.totalPointsCost += Number(d.pointsCost) || 0;
+        },
+        onCount: isEdit ? (n) => { $('outputCount').textContent = n + ' 字'; } : null,
+      });
+
+      // === B. 扫这一轮里的 load_model ===
+      const { keys, cleanedText } = extractLoadKb(routerOutput);
+
+      if (keys.length === 0) {
+        // —— 先看是不是「带标记的最终全剧本」(支持分批) ——
+        const cap = feedScriptCapture(routerOutput);
+        if (cap.started) {
+          if (!cap.done) {
+            session.autoSteps++;
+            session.routerContent = session.routerContent + '\n\n' + routerOutput + '\n\n' + AUTO_CONTINUE_MSG;
+            if (!isEdit) { routerEl.remove(); setStageActive(7); }
+            setStatus('正在生成全剧本…', 'busy');
+            maybeScroll();
+            continue;
+          }
+          const wasEdit = session.phase === 'edit';
+          session.scriptSnapshot = cap.script;
+          session.phase = 'edit';
+          finishStageBar();
+          if (wasEdit) {
+            routerEl.className = 'final-round';
+            routerEl.textContent = cap.script;          // 去掉标记,显示干净新剧本
+            if (!session.editLog) session.editLog = [];
+            session.editLog.push({ role: 'assistant', text: '(已输出新版全剧本)' });
+          } else {
+            routerEl.remove();                           // 删掉隐藏的原始流(含标记)
+            const scriptEl = document.createElement('div');
+            scriptEl.className = 'final-round';
+            scriptEl.textContent = cap.script;
+            out.appendChild(scriptEl);
+          }
+          enterEditDone(out, routerOutput);
+          return;
+        }
+        // 编辑态下、没带标记:178 在反问/对话 → 记进 editLog,弹回复框,不动快照
+        if (session.phase === 'edit') {
+          editAwaitReply(out, routerOutput);
+          return;
+        }
+
+        // 没有 load_model —— 通常意味着这一轮是终稿或反问。
+        // 但有一种例外:router 嘴上说"正在为您准备…请稍候"之类,却忘了发标签。
+        // 这种"假终稿"如果直接弹回复框,用户就被晾在那,看着像卡死。
+        if (looksLikeStalledRouter(cleanedText) && session.stallNudges < 2) {
+          // 自动催一轮:把这一轮 router 自己说的话拼回上下文,
+          // 再补一句明确指示,让它要么发标签、要么直接出正文。
+          session.stallNudges++;
+          // 旧逻辑会把这段 routerEl 降级成 .router-round(12.5px 灰小字),
+          // 导致用户之前看着大字读到一半,nudge 一触发整段瞬间变小变淡 —— 没法审阅。
+          // 现在保持原样:既然有实质内容(已被 looksLikeStalledRouter 的长度门槛过滤),
+          // 就让它继续以 .final-round 显示;nudge 提示和重跑内容都追加在下方。
+          // routerEl.className = 'router-round';     // ← 移除,不再视觉降级
+          // routerEl.textContent = cleanedText || '(路由)';  // ← 同上,流式渲染好的文本保留
+
+          if (isEdit) {
+            const note = document.createElement('div');
+            note.className = 'load-divider';
+            note.textContent = `路由说要继续但没发加载指令 —— 自动催它第 ${session.stallNudges} 次`;
+            out.appendChild(note);
+          } else {
+            routerEl.remove();   // 自动轮:隐藏内部催促噪音
+          }
+          maybeScroll();
+
+          session.routerContent =
+            session.routerContent + '\n\n' +
+            cleanedText + '\n\n' +
+            '请直接继续:如需加载知识库就发出 <load_kb> 标签(可逗号分隔多个),不需要就直接输出最终正文。';
+          continue;   // 重跑 router
+        }
+
+        // === 混合自动模式:这一轮没有 load_model ——
+        //   · 流程还没启动(一个知识库都没加载过)→ 这是开头的「反问」,
+        //     必须停下、弹回复框,让用户确认改编类型 / 总集数 / 每集秒数。
+        //   · 流程已经启动(至少加载过一个知识库)→ 这是一个「阶段产出」
+        //     (题材 / 规划 / 人物 / 状态账本 / 分集 / 细化 / 审校报告 / 完整修正版…),
+        //     用户开头已经确认过了,从这里开始全自动:自动塞「继续」推进,
+        //     一路把整条链跑到合规自检结束,中途不再打扰用户。 ===
+        if (!STEP_BY_STEP && session.totalLoads > 0) {
+          const flowDone = looksFlowComplete(cleanedText);
+          // 卡死检测:连续两轮产出几乎一样 → 路由在原地打转,别再空转烧积分
+          const prev = session.lastAutoOutput || '';
+          const stuck = prev &&
+            cleanedText.trim().slice(0, 240) === prev.trim().slice(0, 240) &&
+            Math.abs(cleanedText.length - prev.length) < 40;
+
+          if (!flowDone && !stuck) {
+            session.autoSteps++;
+            session.lastAutoOutput = cleanedText;
+            session.stallNudges = 0;
+            session.lastRouterOutput = '';   // 本轮产出已并入 routerContent,不留给手动续跑重复拼
+
+            session.routerContent =
+              session.routerContent + '\n\n' + routerOutput + '\n\n' + AUTO_CONTINUE_MSG;
+            session.userConversation =
+              session.userConversation + '\n\n' + routerOutput + '\n\n' + AUTO_CONTINUE_MSG;
+
+            if (!isEdit) routerEl.remove();   // 删掉隐藏的内部自检产出,用户只看进度条
+            // 分集(4)之后那些无加载的「细化/审校」轮,靠这里把进度条推到 5→6
+            const _cur = (session.stageIdx || 0);
+            if (_cur >= 4 && _cur < 6) setStageActive(_cur + 1);
+            maybeScroll();
+            continue;   // 直接进入下一轮 router,不打扰用户
+          }
+
+          if (stuck) {
+            const w = document.createElement('div');
+            w.className = 'multi-warn';
+            w.textContent = '⚠ 路由连续两轮产出几乎一样 —— 自动推进已停下,可在下面手动给个明确指示继续。';
+            out.appendChild(w);
+          }
+          // flowDone / stuck → 落到下面正常收尾、弹回复框
+        }
+
+        // 真·没有 load_model → 这一轮就是终稿或反问 → 让它对用户可见。
+        if (!isEdit) { routerEl.classList.remove('auto-internal'); finishStageBar(); }
+        clearRunBanner();
+        session.stallNudges = 0;   // 正常收尾,清掉催促计数
+        const finalLen = routerOutput.length;
+        $('outputCount').textContent = finalLen + ' 字';
+
+        // 保存这一轮的原始输出,供"继续对话"时拼回上下文
+        session.lastRouterOutput = routerOutput;
+
+        const cost   = session.totalPointsCost ? `消耗 ${session.totalPointsCost} 积分 · ` : '';
+        const dur    = ((Date.now() - session.t0) / 1000).toFixed(1);
+        const kbN    = session.totalLoads;
+        const kbStr  = kbN ? `加载 ${kbN} 次知识库 · ` : '';
+        if (session.finalBalance !== null) $('metaPoints').textContent = session.finalBalance;
+
+        // 若是被"催了两次仍不发标签"兜底落到这里,给用户一句解释
+        if (looksLikeStalledRouter(cleanedText)) {
+          const warn = document.createElement('div');
+          warn.className = 'multi-warn';
+          warn.textContent = '⚠ 路由连续说"请稍候"却始终没发出加载指令 —— 已停在这。可在下面直接说「继续」或「别加载了直接写正文」来推进。';
+          out.appendChild(warn);
+        }
+
+        const apStr = session.autoSteps ? `自动推进 ${session.autoSteps} 步 · ` : '';
+        setStatus(
+          session.autoSteps ? '自动跑完' : '完成',
+          'done',
+          cost + kbStr + apStr + `用时 ${dur}s · 共 ${finalLen} 字`);
+
+        // 自动留底到本地历史(按 session.t0 upsert,继续对话会覆盖同一条)
+        try { _saveCurrentSessionToHistory(); }
+        catch (e) { console.warn('[history] save on complete failed', e); }
+
+        // 终稿区下方弹出回复框,用户可继续追问
+        showReplyBox();
+        return;
+      }
+
+      // router 正常发了 load 指令 —— 清掉停顿计数
+      session.stallNudges = 0;
+
+      // 路由轮:自动轮 routerEl 是隐藏的,直接删掉(用户只看进度条);编辑轮降级成淡灰小字保留
+      if (isEdit) { routerEl.className = 'router-round'; routerEl.textContent = cleanedText || '(参考资料)'; }
+      else { routerEl.remove(); }
+
+      // === C. 按 key 解析 + 校验(支持一轮多个 key 同时加载) ===
+      const resolved = [], missing = [];
+      for (const key of keys) {
+        const kb = (window.KB || {})[key];
+        if (kb && typeof kb.text === 'string') resolved.push({ key: key, name: kb.name || key, group: kb.group || '', text: kb.text });
+        else missing.push(key);
+      }
+      if (resolved.length === 0) {
+        softAbort(out,
+          `router 要求加载 [${keys.join(', ')}],但都不在前端知识库 window.KB 里(检查 kb-data.js 是否引入、key 是否写对)`,
+          `未知库 ${keys.join(',')}`, cleanedText);
+        return;
+      }
+      if (missing.length) {
+        const w = document.createElement('div');
+        w.className = 'multi-warn';
+        w.textContent = `\u26A0 以下 key 不在知识库里,已跳过:${missing.join(', ')}`;
+        out.appendChild(w);
+      }
+
+      // === D. 进度提示:自动轮更新阶段进度条(不再露 #key/字数);编辑轮给个轻提示 ===
+      const stg = stageForKeys(resolved.map(r => r.key));
+      let divider = null;
+      if (isEdit) {
+        divider = document.createElement('div');
+        divider.className = 'load-divider';
+        divider.textContent = '正在调取参考资料…';
+        out.appendChild(divider);
+        setStatus('调取参考资料…', 'busy');
+      } else if (stg >= 0) {
+        setStageActive(stg);
+      } else {
+        setStatus('正在准备资料…', 'busy');
+      }
+      maybeScroll();
+
+      // === E. 本地取正文拼回喂块(静态资料,不再调子模型 LLM,一次注入多个) ===
+      let totalChars = 0;
+      const feedParts = [];
+      for (const r of resolved) {
+        totalChars += r.text.length;
+        feedParts.push(`[知识库 #${r.key} \u00B7 ${r.name} 开始]\n` + r.text + `\n[知识库 #${r.key} \u00B7 ${r.name} 结束]`);
+        session.loadedIds.add(r.key);
+        session.totalLoads++;
+      }
+      const loadedKeys = resolved.map(r => r.key);
+      session.lastExecutedId = loadedKeys.join(',');
+
+      // === F. 编辑轮把轻提示标记完成;自动轮无可见分隔条(只有进度条) ===
+      if (divider) { divider.className = 'load-divider done'; divider.textContent = '参考资料已就绪'; }
+
+      // === G. 回喂给 router,进入下一轮(for 循环自然续跑)。
+      //        cleanedText 在前,紧跟 <load_kb> 标签 + 各库正文,178 扫到末尾标签后有正文 → 判「已回喂」。 ===
+      session.routerContent =
+        session.routerContent + '\n\n' + cleanedText + '\n\n' +
+        '<load_kb>' + loadedKeys.join(',') + '</load_kb>\n' + feedParts.join('\n\n');
+    }
+
+    // 编排超轮上限也走软中止:挂警告 + 弹回复框,不抛错
+    softAbort(out,
+      `编排已跑了 ${MAX_ORCH_ROUNDS} 轮还没收尾,router 可能没收住`,
+      `超 ${MAX_ORCH_ROUNDS} 轮`,
+      '');
+    return;
+
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      setStatus('已中止', 'error');
+    } else {
+      setStatus('出错', 'error', e.message || '未知错误');
+      toast('改文失败:' + (e.message || '未知错误'), 'error');
+    }
+  } finally {
+    $('goBtn').disabled = false;
+    $('stopBtn').classList.remove('show');
+    currentAbort = null;
+  }
+}
+
+/* ---------- 继续对话:回复框 / 用户回复视觉锚点 ---------- */
+
+function showReplyBox() {
+  removeReplyBox();
+  const out = $('outputText');
+  const box = document.createElement('div');
+  box.className = 'reply-box';
+  box.id = 'replyBox';
+
+  const label = document.createElement('span');
+  label.className = 'reply-box-label';
+  label.textContent = '继续对话 · CONTINUE';
+  box.appendChild(label);
+
+  const row = document.createElement('div');
+  row.className = 'reply-box-row';
+
+  const ta = document.createElement('textarea');
+  ta.className = 'reply-input';
+  ta.id = 'replyInput';
+  ta.placeholder = '回答路由的反问、追加要求,或继续追问…(回车发送,Shift+Enter 换行)';
+  row.appendChild(ta);
+
+  const btn = document.createElement('button');
+  btn.className = 'reply-send';
+  btn.id = 'replySend';
+  btn.textContent = '继 续';
+  btn.addEventListener('click', () => continueRewrite(ta.value));
+  row.appendChild(btn);
+
+  ta.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    // 输入法组词中的回车用于选字/上屏,绝不当发送(中文/日文输入必须避开)
+    if (e.isComposing || e.keyCode === 229) return;
+    // Shift+Enter 换行,交给默认行为
+    if (e.shiftKey) return;
+    // 普通回车(以及 Ctrl/Cmd+Enter)→ 发送
+    e.preventDefault();
+    continueRewrite(ta.value);
+  });
+
+  box.appendChild(row);
+  out.appendChild(box);
+
+  // 聚焦输入框,但用 preventScroll 防止聚焦本身把视图拽到底。
+  setTimeout(() => ta.focus({ preventScroll: true }), 30);
+
+  // 关键:不再无条件 forceScrollBottom()。
+  //   · 用户本来就贴底跟读  → 顺势把回复框带进视野(forceScrollBottom)
+  //   · 用户正在上方审阅原文/译文 → 绝不打断,只在右下角亮起「↓」箭头,
+  //     用户想看最新内容时点一下即可到底。
+  if (_stickBottom) forceScrollBottom();
+  else updateToBottomFab();
+}
+
+function removeReplyBox() {
+  const box = document.getElementById('replyBox');
+  if (box) box.remove();
+}
+
+/** 把用户的回复以"你 · YOU + 内容"的形式压到输出流末尾,做对话锚点。
+ *  这只是 UI 显示,不参与发到后端的 content —— content 那边是裸文本拼接。 */
+function appendUserReplyToOutput(text) {
+  const out = $('outputText');
+  const node = document.createElement('div');
+  node.className = 'user-reply';
+  const lbl = document.createElement('span');
+  lbl.className = 'user-reply-label';
+  lbl.textContent = '你 · YOU';
+  node.appendChild(lbl);
+  node.appendChild(document.createTextNode(text));
+  out.appendChild(node);
+  forceScrollBottom();
+}
+
+/** 编排出问题(重复加载/未知模型/超轮上限等)时的软中止处理:
+ *  - 在输出区压一条橙色警告,告诉用户发生了什么 + 该怎么救
+ *  - 保存当前 cleanedText 到 session.lastRouterOutput,供用户回复时拼回上下文
+ *  - 把状态栏改成"需要引导"
+ *  - 弹出回复框,让用户给 router 一个明确指示
+ *
+ *  与抛错的区别:session 状态保留,goBtn/stopBtn 通过 finally 复位,
+ *  用户可以选择(a) 在回复框输入引导继续,或 (b) 点【开始改文】重开。 */
+function softAbort(out, reason, statusTag, lastRouterCleaned) {
+  removeNextStepPanel();  // 万一软中止时面板还在,先拿掉
+
+  const warn = document.createElement('div');
+  warn.className = 'multi-warn';
+  warn.textContent = `⚠ ${reason} — 可在下面回复给个明确指示来引导 router(例如「继续 161」/「换 A2 路径」/「别加载了直接写正文」),或点【开始改文】重开。`;
+  out.appendChild(warn);
+  forceScrollBottom();
+
+  // 把这一轮 router 自己说的话存下来,等用户回复时拼回上下文
+  session.lastRouterOutput = lastRouterCleaned || '';
+
+  clearRunBanner(); finishStageBar();
+  setStatus('需要引导', 'error', statusTag);
+  showReplyBox();
+}
+
+/* ---------- 「下一步」确认面板 ---------- */
+
+/** 在输出区底部弹出"下一步"面板,返回一个 Promise。
+ *  Promise 在用户点击 [继续] 按钮时 resolve:
+ *    - 输入框为空        → { continue: true }
+ *    - 输入框有引导文本  → { continue: false, redirect: '...' }
+ *  在 currentAbort 触发时 reject AbortError(走 catch 干净退出)。
+ *
+ *  调用方需要在两类位置 await 它,把"自动连环执行"切成"一次一停":
+ *  - 路由轮发出 <load_model> 之后、调子模型之前
+ *  - 子模型加载完之后、下一轮路由之前 */
+function waitForUserConfirm(out, plannedActionHTML) {
+  return new Promise((resolve, reject) => {
+    let abortListener = null;
+    const cleanup = () => {
+      removeNextStepPanel();
+      if (abortListener && currentAbort) {
+        currentAbort.signal.removeEventListener('abort', abortListener);
+      }
+    };
+
+    showNextStepPanel(out, plannedActionHTML, {
+      onContinue: () => { cleanup(); resolve({ continue: true }); },
+      onRedirect: (text) => { cleanup(); resolve({ continue: false, redirect: text }); },
+    });
+
+    // 等待期间允许 stopBtn 中断
+    if (currentAbort) {
+      abortListener = () => { cleanup(); reject(new DOMException('aborted', 'AbortError')); };
+      currentAbort.signal.addEventListener('abort', abortListener);
+    }
+
+    // 等待期间在状态栏标明
+    setStatus('等待确认 · 点继续或给引导', 'busy');
+  });
+}
+
+function showNextStepPanel(out, plannedActionHTML, { onContinue, onRedirect }) {
+  removeNextStepPanel();
+  // 等待面板出现时也把回复框拿掉(两种 UI 不并存)
+  removeReplyBox();
+
+  const panel = document.createElement('div');
+  panel.className = 'next-step-panel';
+  panel.id = 'nextStepPanel';
+
+  const label = document.createElement('div');
+  label.className = 'next-step-label';
+  label.textContent = '等待确认 · CONFIRM';
+  panel.appendChild(label);
+
+  const action = document.createElement('div');
+  action.className = 'next-step-action';
+  action.innerHTML = plannedActionHTML;  // 调用方负责转义
+  panel.appendChild(action);
+
+  const controls = document.createElement('div');
+  controls.className = 'next-step-controls';
+
+  const ta = document.createElement('textarea');
+  ta.className = 'next-step-input';
+  // placeholder 把两种行为讲清楚:空 = 确认 / 有字 = 重新判断
+  ta.placeholder = '留空按回车 = 确认执行 · 想换方向或反馈问题就在这里直接写,AI 会重新判断该用哪个知识库修复(Shift+Enter 换行)';
+  controls.appendChild(ta);
+
+  const btn = document.createElement('button');
+  btn.className = 'next-step-go';
+  btn.textContent = '确认执行';
+  controls.appendChild(btn);
+
+  panel.appendChild(controls);
+
+  // 实时小提示:告诉用户「现在按下按钮会发生什么」
+  const hint = document.createElement('div');
+  hint.className = 'next-step-hint';
+  hint.innerHTML = '当前为 <b>确认</b> 状态 · 直接按回车或点【确认执行】即可按计划继续';
+  panel.appendChild(hint);
+
+  // 输入框内容变化 → 切换按钮态(确认 / 重新判断)
+  const refreshState = () => {
+    const hasText = ta.value.trim().length > 0;
+    if (hasText) {
+      btn.classList.add('redirect');
+      btn.textContent = '提交修正给 AI';
+      label.textContent = '调整方向 · REDIRECT';
+      hint.classList.add('redirect');
+      hint.innerHTML =
+        '当前为 <b>修正</b> 状态 · 按回车提交后,系统会把你写的内容送回 AI,由它重新判断该调用哪个知识库来响应你';
+    } else {
+      btn.classList.remove('redirect');
+      btn.textContent = '确认执行';
+      label.textContent = '等待确认 · CONFIRM';
+      hint.classList.remove('redirect');
+      hint.innerHTML = '当前为 <b>确认</b> 状态 · 直接按回车或点【确认执行】即可按计划继续';
+    }
+  };
+  ta.addEventListener('input', refreshState);
+
+  // 点击行为按当前内容判定:有内容 → 走 redirect 让 178 重新判断;空 → continue
+  btn.addEventListener('click', () => {
+    const text = ta.value.trim();
+    if (text) onRedirect(text);
+    else onContinue();
+  });
+
+  ta.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    // 输入法组词中的回车用于选字/上屏,不触发确认
+    if (e.isComposing || e.keyCode === 229) return;
+    // Shift+Enter 换行,交给默认行为
+    if (e.shiftKey) return;
+    // 普通回车(以及 Ctrl/Cmd+Enter)→ 点按钮:有内容就引导,没内容就继续
+    e.preventDefault();
+    btn.click();
+  });
+
+  out.appendChild(panel);
+
+  setTimeout(() => ta.focus(), 30);
+  forceScrollBottom();
+}
+
+function removeNextStepPanel() {
+  const p = document.getElementById('nextStepPanel');
+  if (p) p.remove();
+}
+
+/** 把一段 SSE 文本块解析为 { event, data } */
+function parseSSEBlock(block) {
+  const lines = block.split(/\r?\n/);          // 兼容 \n 与 \r\n
+  let event = 'message';
+  const dataLines = [];
+  for (const line of lines) {
+    if (line.startsWith('event:'))      event = line.slice(6).trim();
+    else if (line.startsWith('data:'))  dataLines.push(line.slice(5).replace(/^ /, ''));  // 按 SSE 规范只剥一个前导空格,保留正文里的空格
+    else if (line.startsWith(':'))      { /* SSE 注释行，忽略 */ }
+    /* id: / retry: 等字段直接忽略 */
+  }
+  if (!dataLines.length) return { event, data: null };
+  const rawJoined = dataLines.join('\n');
+  const rawTrim   = rawJoined.trim();
+  if (rawTrim === '[DONE]') return { event: 'done', data: {} };   // OpenAI 结束哨兵
+  let data;
+  try { data = JSON.parse(rawTrim); }            // 是 JSON 就解析
+  catch { data = { content: rawJoined }; }       // 不是 JSON 就当纯文本(保留原样空格)
+  return { event, data };
+}
+
+function stopRewrite() {
+  if (currentAbort) currentAbort.abort();
+}
+
+/* =====================================================
+ *  提示词查看/编辑弹窗
+ * ===================================================== */
+function openPromptModal() {
+  const sid = $('styleSelect').value || 'deslop_std';
+  const preset = STYLE_PRESETS[sid];
+  if (!preset) return;
+
+  $('promptModalTitle').textContent = '提示词 · ' + preset.label.replace(/…$/, '');
+  if (sid === 'none') {
+    $('promptModalHint').textContent = '"不使用风格"模式下不发送任何提示词。要编辑，请先在下拉框中选择其他风格。';
+    $('promptModalText').value = '';
+    $('promptModalText').disabled = true;
+    $('promptModalSave').disabled = true;
+    $('promptModalReset').disabled = true;
+  } else {
+    $('promptModalText').disabled = false;
+    $('promptModalSave').disabled = false;
+    $('promptModalReset').disabled = false;
+    if (sid === 'custom') {
+      $('promptModalHint').textContent = '自由编写提示词。它会拼到原文前面，连同原文一起发给模型。';
+      $('promptModalText').value = LS.getStyleOverride('custom') || '';
+    } else {
+      $('promptModalHint').textContent = '当前是默认提示词。改后会被记住，"恢复默认"可还原。';
+      $('promptModalText').value = getPresetPrompt(sid);
+    }
+  }
+  $('promptModalCount').textContent = $('promptModalText').value.length + ' 字';
+  $('promptModal').classList.add('show');
+  // 自动聚焦但不滚到底
+  setTimeout(() => { if (!$('promptModalText').disabled) $('promptModalText').focus(); }, 50);
+}
+
+function closePromptModal() {
+  $('promptModal').classList.remove('show');
+}
+
+/* =====================================================
+ *  导入 / 导出
+ *  - 导入: .txt / .md / .markdown / .docx  →  原文 textarea
+ *  - 导出: .txt / .md / .docx / .html      ←  改后 #outputText
+ *
+ *  说明:
+ *  - JSZip 和 mammoth 都按需从 jsDelivr 加载,首次点击有一两秒延迟
+ *  - .docx 是浏览器端手工拼装的 OOXML 包,中文完全没问题
+ * ===================================================== */
+
+const IO_CDN = {
+  jszip:   'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+  mammoth: 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js',
+};
+
+function _loadScriptOnce(url) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-io-src="' + url + '"]');
+    if (existing) {
+      if (existing.dataset.loaded === '1') return resolve();
+      existing.addEventListener('load',  () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('脚本加载失败: ' + url)), { once: true });
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = url;
+    s.setAttribute('data-io-src', url);
+    s.onload  = () => { s.dataset.loaded = '1'; resolve(); };
+    s.onerror = () => reject(new Error('脚本加载失败: ' + url));
+    document.head.appendChild(s);
+  });
+}
+
+async function _ensureJSZip() {
+  if (window.JSZip) return window.JSZip;
+  await _loadScriptOnce(IO_CDN.jszip);
+  for (let i = 0; i < 80 && !window.JSZip; i++) await new Promise(r => setTimeout(r, 40));
+  if (!window.JSZip) throw new Error('JSZip 未就绪,请检查网络');
+  return window.JSZip;
+}
+
+async function _ensureMammoth() {
+  if (window.mammoth) return window.mammoth;
+  await _loadScriptOnce(IO_CDN.mammoth);
+  for (let i = 0; i < 80 && !window.mammoth; i++) await new Promise(r => setTimeout(r, 40));
+  if (!window.mammoth) throw new Error('mammoth 未就绪,请检查网络');
+  return window.mammoth;
+}
+
+function _downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 120);
+}
+
+function _ts() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate())
+       + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+}
+
+function _xmlEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/* 从右侧输出区拿到「干净的纯文本」:剔除思考折叠块/光标/按钮等 UI 节点 */
+function _getOutputText() {
+  const el = document.getElementById('outputText');
+  if (!el) return '';
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll(
+    '.caret, .think, .think-wrap, .think-block, [class*="think"], button, .next-step-action'
+  ).forEach(n => n.remove());
+  // 输出区本身 white-space:pre-wrap,textContent 已经保留了 \n
+  return (clone.textContent || '').replace(/\u00a0/g, ' ');
+}
+
+/* 拿用户在「改后」面板里框选的文本(只取与 #outputText 有交集的部分),
+ * 并且剔除其中的思考块 / 光标 / 按钮等 UI 节点 —— 与全量导出口径一致 */
+function _getSelectionTextInsideOutput() {
+  const sel = window.getSelection && window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return '';
+  const out = document.getElementById('outputText');
+  if (!out) return '';
+
+  const parts = [];
+  for (let i = 0; i < sel.rangeCount; i++) {
+    const range = sel.getRangeAt(i);
+    // 选区与 outputText 完全不相交 → 跳过
+    // 用 intersectsNode 做粗筛(IE 之后所有浏览器都支持)
+    if (range.intersectsNode && !range.intersectsNode(out)) continue;
+
+    // 把选区裁剪到 outputText 范围内
+    const clipped = range.cloneRange();
+    // 起点若在 out 之外 → 拉到 out 开头
+    if (!out.contains(clipped.startContainer)) {
+      clipped.setStart(out, 0);
+    }
+    // 终点若在 out 之外 → 拉到 out 末尾
+    if (!out.contains(clipped.endContainer)) {
+      clipped.setEnd(out, out.childNodes.length);
+    }
+
+    let frag;
+    try { frag = clipped.cloneContents(); }
+    catch { continue; }
+    const wrap = document.createElement('div');
+    wrap.appendChild(frag);
+    wrap.querySelectorAll(
+      '.caret, .think, .think-wrap, .think-block, [class*="think"], button, .next-step-action'
+    ).forEach(n => n.remove());
+    parts.push((wrap.textContent || '').replace(/\u00a0/g, ' '));
+  }
+  return parts.join('');
+}
+
+/* 导出菜单当前的范围状态:
+ *   scope = 'all' | 'selection'
+ *   selectionText:   打开菜单时一次性快照的选区文本(避免菜单打开后选区被清掉)
+ *   selectionSource: 'output' | 'input' | null —— 选区从哪个面板来
+ *   fullText:        打开菜单时一次性快照的全量文本(始终是改后)
+ */
+const _exportState = { scope: 'all', selectionText: '', selectionSource: null, fullText: '' };
+
+/* 持续追踪的最近一次"有意义"选区(随 selectionchange / 鼠标键盘事件刷新)。
+ * 这是兜底:某些浏览器在用户点导出按钮的瞬间会把 window.getSelection() 清空,
+ * 这时如果只在 click 里抓就晚了。我们提前一步追踪好,菜单打开时直接读。 */
+let _trackedSel = null;  // { text: string, source: 'output'|'input' } 或 null
+
+function _refreshTrackedSelection() {
+  // 改后区(div)优先
+  const outTxt = _getSelectionTextInsideOutput();
+  if (outTxt.trim()) {
+    _trackedSel = { text: outTxt, source: 'output' };
+    _updateExportBtnIndicator();
+    return;
+  }
+  // 原文区(textarea)
+  const inTxt = _getSelectionTextInsideInput();
+  if (inTxt.trim()) {
+    _trackedSel = { text: inTxt, source: 'input' };
+    _updateExportBtnIndicator();
+    return;
+  }
+  // 两边都没选了 —— 默认就该清掉,按钮变回灰色。
+  // 唯一例外:导出菜单当前正打开,这时保留 _trackedSel 以免菜单里的
+  // "仅导出选中" 行突然消失看起来抖动 —— _exportState 在 mousedown
+  // 那一刻已经独立快照过了,所以即便 _trackedSel 被清也不影响功能。
+  const menu = document.getElementById('exportMenu');
+  if (menu && menu.classList.contains('show')) return;
+
+  _trackedSel = null;
+  _updateExportBtnIndicator();
+}
+
+function _updateExportBtnIndicator() {
+  const btn = document.getElementById('exportBtn');
+  if (!btn) return;
+  if (_trackedSel && _trackedSel.text.trim()) {
+    btn.classList.add('has-selection');
+    const src = _trackedSel.source === 'input' ? '原文' : '改后';
+    btn.title = `检测到 ${_trackedSel.text.length} 字${src}选区 · 点开可单独导出`;
+  } else {
+    btn.classList.remove('has-selection');
+    btn.title = '把改后的内容导出为文件';
+  }
+}
+
+/* 抓取「原文」textarea 里的选区(focus 在不在它身上都行,selectionStart/End 会保留) */
+function _getSelectionTextInsideInput() {
+  const ta = document.getElementById('inputText');
+  if (!ta || typeof ta.selectionStart !== 'number') return '';
+  if (ta.selectionStart === ta.selectionEnd) return '';
+  return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+}
+
+/* 打开菜单时调用:抓取一次选区 + 全量文本,刷新菜单上的"导出范围"开关 */
+function _prepareExportMenu() {
+  const fullText = _getOutputText();
+
+  // 1. 先尝试 live 选区(此刻 window.getSelection / textarea.selectionStart)
+  let selText = _getSelectionTextInsideOutput();
+  let selSource = selText.trim() ? 'output' : null;
+  if (!selSource) {
+    const inputSel = _getSelectionTextInsideInput();
+    if (inputSel.trim()) {
+      selText = inputSel;
+      selSource = 'input';
+    }
+  }
+  // 2. live 没抓到 —— 用 selectionchange 追踪过的兜底
+  //    (有些浏览器在点 button 那一刻会把 window.getSelection 清掉,这里救回来)
+  if (!selSource && _trackedSel && _trackedSel.text.trim()) {
+    selText = _trackedSel.text;
+    selSource = _trackedSel.source;
+  }
+
+  _exportState.selectionText   = selText;
+  _exportState.selectionSource = selSource;
+  _exportState.fullText        = fullText;
+
+  const section = document.getElementById('exportScopeSection');
+
+  // 选区与全量长度几乎一样,等于 Ctrl+A 选了全部 → 弹这俩开关没意义(只对 output 检查)
+  const meaningful =
+    selSource &&
+    selText.trim().length > 0 &&
+    (selSource !== 'output' || selText.length < fullText.length);
+
+  if (meaningful) {
+    _exportState.scope = 'selection';
+    section.style.display = '';
+
+    // 顶部分节标题 —— 直接把选区字数和来源写清楚,用户不用猜
+    const hintEl = document.getElementById('exportScopeHint');
+    if (hintEl) {
+      hintEl.textContent = selSource === 'input'
+        ? `检测到选中 ${selText.length} 字 · 来自原文`
+        : `检测到选中 ${selText.length} 字`;
+    }
+
+    // 标签和右边的「全部」标签都根据来源做点说明,让用户一眼看清现在要导出的是哪边
+    const selLabel = document.getElementById('exportScopeSelLabel');
+    const allLabel = document.getElementById('exportScopeAllLabel');
+    if (selSource === 'input') {
+      selLabel.textContent = '仅导出选中 · 原文';
+      allLabel.textContent = '导出全部 · 改后';
+    } else {
+      selLabel.textContent = '仅导出选中';
+      allLabel.textContent = '导出全部';
+    }
+
+    document.getElementById('exportScopeSelCount').textContent = selText.length + ' 字';
+    document.getElementById('exportScopeAllCount').textContent = fullText.length + ' 字';
+  } else {
+    _exportState.scope = 'all';
+    section.style.display = 'none';
+  }
+  _updateExportScopeUI();
+}
+
+/* 把"哪个 radio 当前选中"反映到菜单 DOM 上(active class) */
+function _updateExportScopeUI() {
+  const menu = document.getElementById('exportMenu');
+  if (!menu) return;
+  menu.querySelectorAll('.io-menu-radio').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-scope') === _exportState.scope);
+  });
+}
+
+/* ---------- 导出 ---------- */
+
+async function exportRevised(fmt) {
+  // 用打开菜单时快照的文本,而不是这一刻再去摸 DOM —— 那时选区可能已经被清掉
+  const isSel = _exportState.scope === 'selection' && _exportState.selectionText;
+  const text = (isSel ? _exportState.selectionText : _exportState.fullText || _getOutputText())
+                .replace(/\s+$/,'');
+  if (!text.trim()) {
+    toast(isSel ? '所选内容是空的,无法导出' : '改后区还没有内容,无法导出', 'error');
+    return;
+  }
+  // 文件名前缀:看是不是选区导出 + 选区来自哪边
+  //   全量导出 → 改后-…
+  //   选区(改后) → 改后-选中-…
+  //   选区(原文) → 原文-选中-…
+  let prefix = '改后';
+  if (isSel) {
+    prefix = (_exportState.selectionSource === 'input' ? '原文-选中' : '改后-选中');
+  }
+  const base = prefix + '-' + _ts();
+  try {
+    if (fmt === 'txt') {
+      _downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), base + '.txt');
+      toast('已导出 ' + base + '.txt');
+    } else if (fmt === 'md') {
+      _downloadBlob(new Blob([text], { type: 'text/markdown;charset=utf-8' }), base + '.md');
+      toast('已导出 ' + base + '.md');
+    } else if (fmt === 'html') {
+      _downloadBlob(new Blob([_wrapHtml(text)], { type: 'text/html;charset=utf-8' }), base + '.html');
+      toast('已导出 ' + base + '.html');
+    } else if (fmt === 'docx') {
+      toast('正在生成 Word 文档…');
+      const blob = await _buildDocx(text);
+      _downloadBlob(blob, base + '.docx');
+      toast('已导出 ' + base + '.docx');
+    } else {
+      toast('未知导出格式: ' + fmt, 'error');
+    }
+  } catch (err) {
+    console.error('[export]', err);
+    toast('导出失败: ' + (err && err.message ? err.message : err), 'error');
+  }
+}
+
+function _wrapHtml(text) {
+  // 双换行分段,单换行变 <br>
+  const paragraphs = text.split(/\r?\n\r?\n+/).map(p => {
+    const inner = _xmlEscape(p).replace(/\r?\n/g, '<br/>');
+    return '<p>' + inner + '</p>';
+  }).join('\n');
+  return '<!doctype html>\n'
+       + '<html lang="zh-CN">\n'
+       + '<head>\n'
+       + '<meta charset="utf-8" />\n'
+       + '<title>改后</title>\n'
+       + '<style>\n'
+       + '  body { max-width: 760px; margin: 48px auto; padding: 0 24px;\n'
+       + '         font-family: "Songti SC","Source Han Serif SC","Noto Serif SC","SimSun",serif;\n'
+       + '         font-size: 16px; line-height: 1.85; color: #1f1c17; background:#f4efe4; }\n'
+       + '  p { margin: 0 0 1em; text-indent: 2em; }\n'
+       + '</style>\n'
+       + '</head>\n'
+       + '<body>\n'
+       + paragraphs + '\n'
+       + '</body>\n'
+       + '</html>';
+}
+
+/* 手工拼一个最小但合规的 .docx 包,中文友好(UTF-8 XML),Word/WPS/Pages 都能打开 */
+async function _buildDocx(text) {
+  const JSZip = await _ensureJSZip();
+  const zip = new JSZip();
+
+  const contentTypes =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+    '</Types>';
+
+  const rootRels =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+    '</Relationships>';
+
+  const docRels =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+    '</Relationships>';
+
+  // 默认正文 11pt,行距 1.5,中文用宋体
+  const styles =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:docDefaults>' +
+        '<w:rPrDefault><w:rPr>' +
+          '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="宋体" w:cs="Calibri"/>' +
+          '<w:sz w:val="22"/><w:szCs w:val="22"/>' +
+          '<w:lang w:val="en-US" w:eastAsia="zh-CN" w:bidi="ar-SA"/>' +
+        '</w:rPr></w:rPrDefault>' +
+        '<w:pPrDefault><w:pPr>' +
+          '<w:spacing w:line="360" w:lineRule="auto"/>' +
+        '</w:pPr></w:pPrDefault>' +
+      '</w:docDefaults>' +
+    '</w:styles>';
+
+  // 文本 → 段落: 按 \n 拆,空行保留为空段
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const paragraphs = lines.map(line => {
+    if (line === '') return '<w:p/>';
+    return '<w:p><w:r><w:t xml:space="preserve">' + _xmlEscape(line) + '</w:t></w:r></w:p>';
+  }).join('');
+
+  const documentXml =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:body>' +
+        paragraphs +
+        '<w:sectPr>' +
+          '<w:pgSz w:w="11906" w:h="16838"/>' +
+          '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="851" w:footer="992" w:gutter="0"/>' +
+        '</w:sectPr>' +
+      '</w:body>' +
+    '</w:document>';
+
+  zip.file('[Content_Types].xml', contentTypes);
+  zip.folder('_rels').file('.rels', rootRels);
+  const w = zip.folder('word');
+  w.file('document.xml', documentXml);
+  w.file('styles.xml', styles);
+  w.folder('_rels').file('document.xml.rels', docRels);
+
+  return await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    compression: 'DEFLATE',
+  });
+}
+
+/* ---------- 导入 ---------- */
+
+async function handleImportFile(file) {
+  if (!file) return;
+  const name  = file.name || '未命名文件';
+  const lower = name.toLowerCase();
+  const importBtn = $('importBtn');
+  if (importBtn) importBtn.disabled = true;
+
+  try {
+    let content = '';
+
+    if (lower.endsWith('.docx')) {
+      toast('正在解析 Word 文档…');
+      const mammoth = await _ensureMammoth();
+      const buf = await file.arrayBuffer();
+      const res = await mammoth.extractRawText({ arrayBuffer: buf });
+      content = res && res.value ? res.value : '';
+    } else if (lower.endsWith('.doc')) {
+      toast('老版 .doc 不支持,请在 Word 里另存为 .docx 后再导入', 'error');
+      return;
+    } else if (
+      lower.endsWith('.txt') || lower.endsWith('.md') || lower.endsWith('.markdown') ||
+      file.type === 'text/plain' || file.type === 'text/markdown' || file.type === '' ||
+      !/\.[a-z0-9]+$/i.test(lower)
+    ) {
+      content = await file.text();
+    } else {
+      // 兜底:尽量当文本读
+      content = await file.text();
+    }
+
+    if (!content || !content.trim()) {
+      toast('「' + name + '」里没读到任何文字', 'error');
+      return;
+    }
+
+    // (已移除:之前会把超过 10 万字符的内容截断,现在前端不再设上限,全量导入。)
+
+    const ta = $('inputText');
+    ta.value = content;
+    // 触发已有 input 监听器,同步字数 / 风格信息
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    // 滚到顶部,方便用户从头检查
+    ta.scrollTop = 0;
+
+    toast('已导入「' + name + '」');
+  } catch (err) {
+    console.error('[import]', err);
+    toast('导入失败: ' + (err && err.message ? err.message : err), 'error');
+  } finally {
+    if (importBtn) importBtn.disabled = false;
+  }
+}
+
+/* =====================================================
+ *  历史记录 (本地浏览器持久化)
+ *  - 每次"开始改文"或"继续"成功完成时,以 session.t0 为主键 upsert 一条
+ *  - 存在 localStorage['nr_history'] (数组,新→旧)
+ *  - 配额满了自动从最旧的开始挤掉重试
+ *  - UI: 历史 modal(列表 + 还原 + 删除 + 导入/导出备份 + 清空)
+ * ===================================================== */
+
+const HISTORY_LS_KEY = 'nr_history';
+const HISTORY_MAX_ITEMS = 100;     // 软上限,实际由 quota 决定
+const HISTORY_TITLE_MAX = 32;
+
+function _historyLoad() {
+  try {
+    const raw = localStorage.getItem(HISTORY_LS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    console.warn('[history] load failed', e);
+    return [];
+  }
+}
+
+/** 把数组写回 localStorage,Quota 超了就从最旧的开始扔再试 */
+function _historyPersist(arr) {
+  // 先按软上限截断
+  if (arr.length > HISTORY_MAX_ITEMS) arr.length = HISTORY_MAX_ITEMS;
+  let evicted = 0;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      localStorage.setItem(HISTORY_LS_KEY, JSON.stringify(arr));
+      return { ok: true, evicted };
+    } catch (e) {
+      // 多半是 QuotaExceededError —— 把最旧的踢掉再试
+      if (arr.length <= 1) {
+        console.warn('[history] quota exceeded even with 1 item');
+        return { ok: false, evicted };
+      }
+      arr.pop();          // 数组是 新→旧,pop 掉最旧的
+      evicted++;
+    }
+  }
+  return { ok: false, evicted };
+}
+
+function _historyMakeTitle(originalText) {
+  const firstLine = (originalText || '').replace(/\r\n/g, '\n').split('\n').find(l => l.trim()) || '';
+  const compact = firstLine.replace(/\s+/g, ' ').trim();
+  if (!compact) return '(空标题)';
+  if (compact.length <= HISTORY_TITLE_MAX) return compact;
+  return compact.slice(0, HISTORY_TITLE_MAX) + '…';
+}
+
+function _fmtTs(ms) {
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 完成一轮后调用:把当前 session + 两个面板的内容存进历史(按 t0 upsert) */
+function _saveCurrentSessionToHistory() {
+  if (!session || !session.t0) return;        // 没有正在跑的 session,跳过
+  const original = (session.baseContent || $('inputText').value || '').trim();
+  const revised  = _getOutputText().trim();
+  if (!original && !revised) return;          // 两边都空,没意义
+
+  const arr = _historyLoad();
+  const id = session.t0;
+  const now = Date.now();
+  // 看看有没有同 t0 的旧条目
+  const idx = arr.findIndex(it => it && it.id === id);
+  const prevRounds = idx >= 0 ? (arr[idx].rounds || 1) : 0;
+
+  const entry = {
+    id,
+    ts: id,                       // 会话创建时间
+    updatedTs: now,               // 最近一次完成时间
+    rounds: prevRounds + 1,
+    title: _historyMakeTitle(original),
+    original,
+    revised,
+    modelName: (typeof ROUTER_MODEL_NAME !== 'undefined' ? ROUTER_MODEL_NAME : ''),
+    points: session.totalPointsCost || 0,
+    durationMs: now - session.t0,
+  };
+
+  if (idx >= 0) arr.splice(idx, 1);           // 先把旧的拿掉,稍后插到最前
+  arr.unshift(entry);                          // 新→旧顺序,刚更新的排最前
+
+  const res = _historyPersist(arr);
+  if (!res.ok) {
+    console.warn('[history] save failed');
+    return;
+  }
+  if (res.evicted > 0) {
+    toast(`本地空间已满,自动清理了 ${res.evicted} 条最旧的历史`);
+  }
+  // 若历史 modal 当前正打开,实时刷新
+  const hm = document.getElementById('historyModal');
+  if (hm && hm.classList.contains('show')) renderHistoryList();
+}
+
+/* ---------- 渲染历史列表 ---------- */
+
+function renderHistoryList() {
+  const list = $('historyList');
+  const countEl = $('historyCount');
+  const arr = _historyLoad();
+  countEl.textContent = arr.length + ' 条';
+
+  if (arr.length === 0) {
+    list.innerHTML = '<div class="history-list-empty">还没有历史记录<br/>改完文后会自动留底在这里</div>';
+    return;
+  }
+
+  // 用 DOM 拼,避免 XSS
+  list.innerHTML = '';
+  arr.forEach(it => {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    item.setAttribute('role', 'button');
+    item.tabIndex = 0;
+    item.dataset.id = String(it.id);
+
+    const head = document.createElement('div');
+    head.className = 'history-item-head';
+    const title = document.createElement('div');
+    title.className = 'history-item-title';
+    title.textContent = it.title || '(无标题)';
+    const meta = document.createElement('div');
+    meta.className = 'history-item-meta';
+    const revLen = (it.revised || '').length;
+    const roundTag = (it.rounds && it.rounds > 1) ? ` · ${it.rounds} 轮` : '';
+    const pointsTag = it.points ? ` · ${it.points} 分` : '';
+    meta.textContent = `${_fmtTs(it.updatedTs || it.ts)} · ${revLen} 字${roundTag}${pointsTag}`;
+    head.appendChild(title);
+    head.appendChild(meta);
+
+    const preview = document.createElement('div');
+    preview.className = 'history-item-preview';
+    const previewText = (it.revised || it.original || '').replace(/\s+/g, ' ').slice(0, 160);
+    preview.textContent = previewText;
+
+    const actions = document.createElement('div');
+    actions.className = 'history-item-actions';
+
+    const restoreBtn = document.createElement('button');
+    restoreBtn.type = 'button';
+    restoreBtn.className = 'history-action-btn';
+    restoreBtn.title = '还原到工作区';
+    restoreBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>';
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'history-action-btn';
+    delBtn.title = '删除这一条';
+    delBtn.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+
+    actions.appendChild(restoreBtn);
+    actions.appendChild(delBtn);
+
+    item.appendChild(head);
+    item.appendChild(preview);
+    item.appendChild(actions);
+
+    // 点条目正文(非按钮区)= 还原
+    item.addEventListener('click', e => {
+      if (e.target.closest('.history-action-btn')) return;
+      restoreHistoryEntry(it.id);
+    });
+    item.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        restoreHistoryEntry(it.id);
+      }
+    });
+    restoreBtn.addEventListener('click', e => { e.stopPropagation(); restoreHistoryEntry(it.id); });
+    delBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!confirm('删除这一条历史?\n\n「' + (it.title || '无标题') + '」')) return;
+      deleteHistoryEntry(it.id);
+    });
+
+    list.appendChild(item);
+  });
+}
+
+/* ---------- 还原/删除/清空 ---------- */
+
+function restoreHistoryEntry(id) {
+  const arr = _historyLoad();
+  const it = arr.find(x => x && x.id === id);
+  if (!it) { toast('找不到这条历史(可能已被删除)', 'error'); return; }
+
+  // 若正在流式生成,先打断,避免覆盖正在跑的内容
+  if (typeof currentAbort !== 'undefined' && currentAbort) {
+    if (!confirm('当前还有改写在跑,确定要中止并还原?')) return;
+    try { currentAbort.abort(); } catch {}
+  }
+
+  // 把面板填回去
+  const ta = $('inputText');
+  ta.value = it.original || '';
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  ta.scrollTop = 0;
+
+  // 输出区:用纯文本节点呈现,保持原有 white-space:pre-wrap 的渲染逻辑
+  const out = $('outputText');
+  out.innerHTML = '';
+  const span = document.createElement('span');
+  span.textContent = it.revised || '';
+  out.appendChild(span);
+  $('outputCount').textContent = (it.revised || '').length + ' 字';
+
+  // 重置内部 session 状态,避免按"继续"时基于不存在的上下文跑请求
+  session = null;
+  if (typeof removeReplyBox === 'function')      removeReplyBox();
+  if (typeof removeNextStepPanel === 'function') removeNextStepPanel();
+  $('goBtn').disabled = false;
+  $('stopBtn').classList.remove('show');
+
+  setStatus('已还原历史', '', '共 ' + (it.revised || '').length + ' 字 · 如需继续请重新点开始改文');
+  closeHistoryModal();
+  toast('已还原「' + (it.title || '无标题') + '」');
+}
+
+function deleteHistoryEntry(id) {
+  const arr = _historyLoad();
+  const next = arr.filter(x => x && x.id !== id);
+  _historyPersist(next);
+  renderHistoryList();
+  toast('已删除');
+}
+
+function clearAllHistory() {
+  const arr = _historyLoad();
+  if (arr.length === 0) { toast('历史已经是空的'); return; }
+  if (!confirm('确定要清空全部 ' + arr.length + ' 条历史吗?\n\n此操作不可恢复(建议先点"导出备份")。')) return;
+  localStorage.removeItem(HISTORY_LS_KEY);
+  renderHistoryList();
+  toast('已清空全部历史');
+}
+
+/* ---------- JSON 备份导入/导出 ---------- */
+
+function exportHistoryJson() {
+  const arr = _historyLoad();
+  if (arr.length === 0) { toast('历史是空的,没东西可导出', 'error'); return; }
+  const payload = {
+    app: 'gaiwen',
+    type: 'history-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    count: arr.length,
+    items: arr,
+  };
+  const json = JSON.stringify(payload, null, 2);
+  _downloadBlob(new Blob([json], { type: 'application/json;charset=utf-8' }),
+                '改文历史-' + _ts() + '.json');
+  toast('已导出 ' + arr.length + ' 条历史');
+}
+
+async function importHistoryJsonFromFile(file) {
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    let items = [];
+    if (Array.isArray(data)) {
+      // 兜底:有人直接拿数组喂进来
+      items = data;
+    } else if (data && Array.isArray(data.items)) {
+      items = data.items;
+    } else {
+      toast('文件格式不对,不是改文历史备份', 'error');
+      return;
+    }
+    // 基本结构校验,过滤掉脏数据
+    items = items.filter(it => it && typeof it === 'object' && (it.original || it.revised));
+
+    if (items.length === 0) { toast('备份里没有有效条目', 'error'); return; }
+
+    const cur = _historyLoad();
+    // 按 id 合并,导入条目的 updatedTs 更新就覆盖
+    const map = new Map();
+    cur.forEach(it => { if (it && it.id != null) map.set(it.id, it); });
+    let added = 0, updated = 0;
+    items.forEach(it => {
+      // 缺 id 就用 ts/Date.now 顶一个
+      if (it.id == null) it.id = it.ts || Date.now() + Math.floor(Math.random()*1000);
+      if (map.has(it.id)) {
+        const old = map.get(it.id);
+        if ((it.updatedTs || 0) >= (old.updatedTs || 0)) {
+          map.set(it.id, it);
+          updated++;
+        }
+      } else {
+        map.set(it.id, it);
+        added++;
+      }
+    });
+    // 重新按 updatedTs 倒序
+    const merged = Array.from(map.values()).sort((a, b) =>
+      (b.updatedTs || b.ts || 0) - (a.updatedTs || a.ts || 0)
+    );
+    const res = _historyPersist(merged);
+    renderHistoryList();
+    if (res.ok) {
+      toast(`已导入 · 新增 ${added} 条 · 更新 ${updated} 条`);
+    } else {
+      toast('部分导入成功,但本地空间满了,有条目被丢弃', 'error');
+    }
+  } catch (err) {
+    console.error('[history import]', err);
+    toast('导入失败: ' + (err && err.message ? err.message : err), 'error');
+  }
+}
+
+/* ---------- modal 开关 ---------- */
+
+function openHistoryModal() {
+  renderHistoryList();
+  $('historyModal').classList.add('show');
+}
+function closeHistoryModal() {
+  $('historyModal').classList.remove('show');
+}
+
+/* =====================================================
+ *  事件绑定
+ * ===================================================== */
+function bindEvents() {
+  // 登录
+  $('loginBtn').addEventListener('click', doLogin);
+  ['loginUser','loginPass'].forEach(id =>
+    $(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); })
+  );
+
+  // 主功能
+  $('goBtn').addEventListener('click', startRewrite);
+  $('stopBtn').addEventListener('click', stopRewrite);
+  $('newSessionBtn').addEventListener('click', newSession);
+
+  // 输入字数统计
+  $('inputText').addEventListener('input', () => {
+    $('inputCount').textContent = $('inputText').value.length + ' 字';
+    updateStyleInfo();
+  });
+
+  // ---------- 导入 ----------
+  const importBtn   = $('importBtn');
+  const importInput = $('importFileInput');
+  if (importBtn && importInput) {
+    importBtn.addEventListener('click', () => importInput.click());
+    importInput.addEventListener('change', e => {
+      const f = e.target.files && e.target.files[0];
+      handleImportFile(f);
+      // 重置 value,这样同一个文件还能再次导入(否则 change 不会触发)
+      e.target.value = '';
+    });
+  }
+
+  // ---------- 导出 ----------
+  const exportBtn  = $('exportBtn');
+  const exportMenu = $('exportMenu');
+  if (exportBtn && exportMenu) {
+    // 关键修复:在 mousedown 这一刻就把选区快照下来。
+    // 某些浏览器在点 <button> 的瞬间会把 window.getSelection 清空,
+    // 等到 click 事件触发时已经晚了 —— 所以必须用 mousedown 抢一步。
+    // 键盘 Enter/Space 激活按钮不会走 mousedown,所以 click 里也保留一道兜底。
+    let _preparedByMousedown = false;
+    exportBtn.addEventListener('mousedown', () => {
+      if (!exportMenu.classList.contains('show')) {
+        try { _prepareExportMenu(); _preparedByMousedown = true; }
+        catch (err) { console.warn('[export] prepare on mousedown failed', err); }
+      }
+    });
+    exportBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const willShow = !exportMenu.classList.contains('show');
+      if (willShow && !_preparedByMousedown) {
+        // 键盘触发(Tab + Enter) —— mousedown 没跑,这里补一刀
+        try { _prepareExportMenu(); }
+        catch (err) { console.warn('[export] prepare on click failed', err); }
+      }
+      _preparedByMousedown = false;
+      exportMenu.classList.toggle('show', willShow);
+      exportBtn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+    });
+    // 范围切换:点击不关菜单,只切换 _exportState.scope
+    exportMenu.querySelectorAll('.io-menu-radio').forEach(rb => {
+      rb.addEventListener('click', e => {
+        e.stopPropagation();
+        _exportState.scope = rb.getAttribute('data-scope') || 'all';
+        _updateExportScopeUI();
+      });
+    });
+    // 格式按钮:点哪个就按当前 scope 导出对应格式
+    exportMenu.querySelectorAll('button[data-fmt]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        exportMenu.classList.remove('show');
+        exportBtn.setAttribute('aria-expanded', 'false');
+        exportRevised(btn.getAttribute('data-fmt'));
+      });
+    });
+    // 点击外部 / 按 Esc 关闭菜单
+    document.addEventListener('click', e => {
+      if (!exportMenu.classList.contains('show')) return;
+      if (exportMenu.contains(e.target) || exportBtn.contains(e.target)) return;
+      exportMenu.classList.remove('show');
+      exportBtn.setAttribute('aria-expanded', 'false');
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && exportMenu.classList.contains('show')) {
+        exportMenu.classList.remove('show');
+        exportBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  // 选区追踪:任何时候用户在改后区/原文区里拖拽选了内容,导出按钮就变成朱砂红,
+  // 提示「可单独导出选中」。同时 _trackedSel 作为 _prepareExportMenu 的兜底,
+  // 防止某些浏览器在点按钮时清空 selection。
+  document.addEventListener('selectionchange', _refreshTrackedSelection);
+  const _ta = $('inputText');
+  if (_ta) {
+    // textarea 的选区变化在多数浏览器里不会触发 document.selectionchange,
+    // 用这几个事件兜住。
+    ['select', 'mouseup', 'keyup', 'input', 'blur'].forEach(evt => {
+      _ta.addEventListener(evt, _refreshTrackedSelection);
+    });
+  }
+
+  // ---------- 历史 ----------
+  const historyBtn          = $('historyBtn');
+  const historyModal        = $('historyModal');
+  const historyModalClose   = $('historyModalClose');
+  const historyClearBtn     = $('historyClearBtn');
+  const historyExportBtn    = $('historyExportBtn');
+  const historyImportBtn    = $('historyImportBtn');
+  const historyImportInput  = $('historyImportInput');
+
+  if (historyBtn)        historyBtn.addEventListener('click', openHistoryModal);
+  if (historyModalClose) historyModalClose.addEventListener('click', closeHistoryModal);
+  if (historyClearBtn)   historyClearBtn.addEventListener('click', clearAllHistory);
+  if (historyExportBtn)  historyExportBtn.addEventListener('click', exportHistoryJson);
+  if (historyImportBtn && historyImportInput) {
+    historyImportBtn.addEventListener('click', () => historyImportInput.click());
+    historyImportInput.addEventListener('change', e => {
+      const f = e.target.files && e.target.files[0];
+      importHistoryJsonFromFile(f);
+      e.target.value = '';
+    });
+  }
+  if (historyModal) {
+    // 点遮罩关闭
+    historyModal.addEventListener('click', e => {
+      if (e.target === historyModal) closeHistoryModal();
+    });
+    // 全局 Esc 关闭历史 modal(优先级低于导出菜单,但同一 keydown 这里不会冲突)
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && historyModal.classList.contains('show')) {
+        closeHistoryModal();
+      }
+    });
+  }
+
+  // 路由已锁死为 178,不再需要 modelSelect 的 change 监听
+
+  // 风格切换
+  $('styleSelect').addEventListener('change', () => {
+    LS.styleId = $('styleSelect').value;
+    updateStyleInfo();
+    // 选了"自定义"且还没填，自动打开编辑窗
+    if ($('styleSelect').value === 'custom' && !LS.getStyleOverride('custom')) {
+      openPromptModal();
+    }
+  });
+
+  // 查看/编辑当前提示词
+  $('viewPromptBtn').addEventListener('click', openPromptModal);
+
+  // 提示词弹窗
+  $('promptModalClose').addEventListener('click', closePromptModal);
+  $('promptModal').addEventListener('click', e => {
+    if (e.target.id === 'promptModal') closePromptModal();
+  });
+  $('promptModalText').addEventListener('input', () => {
+    $('promptModalCount').textContent = $('promptModalText').value.length + ' 字';
+  });
+  $('promptModalReset').addEventListener('click', () => {
+    const sid = $('styleSelect').value || 'deslop_std';
+    if (sid === 'custom') {
+      $('promptModalText').value = '';
+    } else {
+      $('promptModalText').value = STYLE_PRESETS[sid] ? STYLE_PRESETS[sid].prompt : '';
+    }
+    $('promptModalCount').textContent = $('promptModalText').value.length + ' 字';
+  });
+  $('promptModalSave').addEventListener('click', () => {
+    const sid = $('styleSelect').value || 'deslop_std';
+    const text = $('promptModalText').value;
+    // 如果和默认一样，删除 override（用默认）
+    if (sid !== 'custom' && text === STYLE_PRESETS[sid].prompt) {
+      LS.setStyleOverride(sid, '');
+      toast('已恢复默认');
+    } else {
+      LS.setStyleOverride(sid, text);
+      toast('已保存');
+    }
+    updateStyleInfo();
+    closePromptModal();
+  });
+
+  // 顶栏菜单
+  $('menuToggle').addEventListener('click', e => {
+    e.stopPropagation();
+    $('menuPop').classList.toggle('show');
+  });
+  document.addEventListener('click', () => $('menuPop').classList.remove('show'));
+
+  $('menuRefresh').addEventListener('click', () => {
+    $('menuPop').classList.remove('show');
+    loadModels();
+    refreshMe();
+    toast('已刷新');
+  });
+  $('menuLogout').addEventListener('click', () => {
+    if (confirm('确定退出登录？')) logout();
+  });
+
+  // 快捷键：Ctrl/Cmd + Enter 提交；Esc 关闭弹窗
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('promptModal').classList.contains('show')) {
+      e.preventDefault();
+      closePromptModal();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && $('app').classList.contains('active')) {
+      e.preventDefault();
+      if (!$('goBtn').disabled) startRewrite();
+    }
+  });
+}
+
+/* =====================================================
+ *  启动
+ * ===================================================== */
+function boot() {
+  bindEvents();
+  bindOutputScrollWatch();   // 启用输出区"贴底"滚动跟踪
+
+  // 预填登录信息
+  $('loginUser').value   = LS.username;
+
+  // 已有 token 直接进入
+  if (LS.token && LS.server) {
+    enterApp();
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
