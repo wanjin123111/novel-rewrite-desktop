@@ -1462,6 +1462,35 @@ function forceScrollBottom() {
   pane.scrollTop = pane.scrollHeight;
   updateToBottomFab();
 }
+
+function typeTextIntoElement(el, text, onCount) {
+  return new Promise(resolve => {
+    const full = String(text || '');
+    let i = 0;
+    el.textContent = '';
+    const step = () => {
+      if (currentAbort && currentAbort.signal.aborted) {
+        el.textContent = full;
+        if (onCount) onCount(full.length);
+        maybeScroll();
+        resolve();
+        return;
+      }
+      if (i >= full.length) { resolve(); return; }
+      i += 1;
+      el.textContent = full.slice(0, i);
+      if (onCount) onCount(i);
+      maybeScroll();
+      let delay = 18;
+      const remain = full.length - i;
+      if (remain > 220) delay = 12;
+      if (remain > 900) delay = 8;
+      setTimeout(step, delay);
+    };
+    step();
+  });
+}
+
 /** 绑定一次:监听用户滚动,动态维护 _stickBottom */
 function bindOutputScrollWatch() {
   const pane = _outputPane();
@@ -1875,9 +1904,9 @@ async function _streamOneCallOnce({ modelId, content, renderEl, showCaret, onDon
   let twTimer  = null;
   let drainResolve = null;
   let readerDone = false;
-  const TICK_NORMAL = 16;
-  const TICK_FAST   = 6;
-  const TICK_RUSH   = 2;
+  const TICK_NORMAL = 18;
+  const TICK_FAST   = 12;
+  const TICK_RUSH   = 8;
 
   function renderShown() {
     if (textNode) textNode.textContent = outputBuffer.slice(0, shownLen);
@@ -1895,8 +1924,8 @@ async function _streamOneCallOnce({ modelId, content, renderEl, showCaret, onDon
     shownLen += 1;
     renderShown();
     let delay = TICK_NORMAL;
-    if (readerDone && backlog > 40)  delay = TICK_FAST;
-    if (readerDone && backlog > 600) delay = TICK_RUSH;
+    if (readerDone && backlog > 220) delay = TICK_FAST;
+    if (readerDone && backlog > 900) delay = TICK_RUSH;
     twTimer = setTimeout(tick, delay);
   }
   function ensureTyping() {
@@ -2348,16 +2377,19 @@ async function runOrchestration({ statusOnStart }) {
           session.phase = 'edit';
           finishStageBar();
           if (wasEdit) {
-            routerEl.className = 'final-round';
-            routerEl.textContent = cap.script;          // 去掉标记,显示干净新剧本
+            routerEl.remove();                           // 删掉原始流(含标记),重新逐字显示干净新剧本
+            const scriptEl = document.createElement('div');
+            scriptEl.className = 'final-round';
+            out.appendChild(scriptEl);
+            await typeTextIntoElement(scriptEl, cap.script, n => { $('outputCount').textContent = n + ' 字'; });
             if (!session.editLog) session.editLog = [];
             session.editLog.push({ role: 'assistant', text: '(已输出新版全剧本)' });
           } else {
             routerEl.remove();                           // 删掉隐藏的原始流(含标记)
             const scriptEl = document.createElement('div');
             scriptEl.className = 'final-round';
-            scriptEl.textContent = cap.script;
             out.appendChild(scriptEl);
+            await typeTextIntoElement(scriptEl, cap.script, n => { $('outputCount').textContent = n + ' 字'; });
           }
           enterEditDone(out, routerOutput);
           return;
