@@ -1,69 +1,69 @@
 {
-    "name":  "novel-rewrite-desktop",
-    "version":  "0.1.0",
-    "description":  "改文 · 小说去AI味 桌面客户端（Electron）",
-    "main":  "main.js",
-    "author":  "",
-    "license":  "MIT",
-    "scripts":  {
-                    "start":  "electron .",
-                    "dist":  "electron-builder",
-                    "dist:win":  "electron-builder --win",
-                    "publish:win":  "electron-builder --win --publish always",
-                    "dist:mac":  "electron-builder --mac",
-                    "dist:linux":  "electron-builder --linux"
-                },
-    "devDependencies":  {
-                            "electron":  "^31.0.0",
-                            "electron-builder":  "^24.13.3"
-                        },
-    "build":  {
-                  "appId":  "com.meidawenhua.novelrewrite",
-                  "productName":  "改文",
-                  "directories":  {
-                                      "output":  "release"
-                                  },
-                  "files":  [
-                                "main.js",
-                                "renderer/**/*",
-                                "package.json"
-                            ],
-                  "win":  {
-                              "target":  [
-                                             "nsis"
-                                         ]
-                          },
-                  "mac":  {
-                              "target":  [
-                                             "dmg"
-                                         ],
-                              "category":  "public.app-category.productivity"
-                          },
-                  "linux":  {
-                                "target":  [
-                                               "AppImage"
-                                           ]
-                            },
-                  "nsis":  {
-                               "oneClick":  false,
-                               "allowToChangeInstallationDirectory":  true,
-                               "shortcutName":  "改文",
-                               "artifactName":  "novel-rewrite-desktop-setup-${version}.${ext}"
-                           },
-                  "publish":  [
-                                  {
-                                      "provider":  "github",
-                                      "owner":  "wanjin123111",
-                                      "repo":  "novel-rewrite-desktop"
-                                  }
-                              ],
-                  "artifactName":  "novel-rewrite-desktop-setup-${version}.${ext}"
-              },
-    "dependencies":  {
-                         "electron-updater":  "^6.8.3"
-                     },
-    "repository":  {
-                       "type":  "git",
-                       "url":  "https://github.com/wanjin123111/novel-rewrite-desktop.git"
-                   }
+    "name": "novel-rewrite-desktop",
+    "version": "0.1.1",
+    "description": "改文 · 小说去AI味 桌面客户端（Electron）",
+    "main": "main.js",
+    "author": "",
+    "license": "MIT",
+    "scripts": {
+        "start": "electron .",
+        "dist": "electron-builder",
+        "dist:win": "electron-builder --win",
+        "publish:win": "electron-builder --win --publish always",
+        "dist:mac": "electron-builder --mac",
+        "dist:linux": "electron-builder --linux"
+    },
+    "devDependencies": {
+        "electron": "^31.0.0",
+        "electron-builder": "^24.13.3"
+    },
+    "build": {
+        "appId": "com.meidawenhua.novelrewrite",
+        "productName": "改文",
+        "directories": {
+            "output": "release"
+        },
+        "files": [
+            "main.js",
+            "renderer/**/*",
+            "package.json"
+        ],
+        "win": {
+            "target": [
+                "nsis"
+            ]
+        },
+        "mac": {
+            "target": [
+                "dmg"
+            ],
+            "category": "public.app-category.productivity"
+        },
+        "linux": {
+            "target": [
+                "AppImage"
+            ]
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true,
+            "shortcutName": "改文",
+            "artifactName": "novel-rewrite-desktop-setup-${version}.${ext}"
+        },
+        "publish": [
+            {
+                "provider": "github",
+                "owner": "wanjin123111",
+                "repo": "novel-rewrite-desktop"
+            }
+        ],
+        "artifactName": "novel-rewrite-desktop-setup-${version}.${ext}"
+    },
+    "dependencies": {
+        "electron-updater": "^6.8.3"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/wanjin123111/novel-rewrite-desktop.git"
+    }
 }
