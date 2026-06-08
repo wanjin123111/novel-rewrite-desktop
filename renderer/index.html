@@ -1756,13 +1756,47 @@ const LEGACY_ID_MAP = {
   180: 'state-tracking',
 };
 
+const KB_KEY_ALIASES = {
+  'genre=guide': 'genre-guide',
+  'genre_guide': 'genre-guide',
+  'genre.guide': 'genre-guide',
+  'episode=detail': 'episode-detail',
+  'episode_detail': 'episode-detail',
+  'hook=design': 'hook-design',
+  'hook_design': 'hook-design',
+  'opening=rules': 'opening-rules',
+  'opening_rules': 'opening-rules',
+  'paywall=design': 'paywall-design',
+  'paywall_design': 'paywall-design',
+  'rhythm=curve': 'rhythm-curve',
+  'rhythm_curve': 'rhythm-curve',
+  'satisfaction=matrix': 'satisfaction-matrix',
+  'satisfaction_matrix': 'satisfaction-matrix',
+  'villain=design': 'villain-design',
+  'villain_design': 'villain-design',
+  'state=tracking': 'state-tracking',
+  'state_tracking': 'state-tracking',
+  'compliance=checklist': 'compliance-checklist',
+  'compliance_checklist': 'compliance-checklist',
+};
+
+function normalizeKbKey(key) {
+  const raw = String(key || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  return KB_KEY_ALIASES[lower] || lower;
+}
+
 /** 抠出要加载的知识库 key 列表。
  *  主协议:<load_kb>key1,key2,…</load_kb>(可逗号分隔多个,支持一轮多库)。
  *  兼容:旧 <load_model>123</load_model> 按 LEGACY_ID_MAP 翻成 key。
  *  返回 { keys, cleanedText };keys 去重保序。 */
 function extractLoadKb(text) {
   const keys = [], seen = new Set();
-  const push = k => { if (k && !seen.has(k)) { seen.add(k); keys.push(k); } };
+  const push = k => {
+    const key = normalizeKbKey(k);
+    if (key && !seen.has(key)) { seen.add(key); keys.push(key); }
+  };
   const reKb = /<load_kb>\s*([^<]+?)\s*<\/load_kb>/g;
   let m;
   while ((m = reKb.exec(text)) !== null) m[1].split(/[,\uFF0C\s]+/).forEach(seg => push(seg.trim()));
@@ -1840,7 +1874,9 @@ function extractDeltaText(ev) {
  * @returns {Promise<string>} 累积的正文输出(不含 think 部分)
  */
 async function streamOneCall(opts) {
-  const MAX_RETRIES      = 2;      // 最多重试 2 次 → 共 3 次尝试
+  // 不做隐形自动重试:后端按请求计费时,重试会让用户感觉"报错也一直扣积分"。
+  // 真卡住/失败时停下来给用户处理,避免前端私自多发计费请求。
+  const MAX_RETRIES      = 0;
   const IDLE_TIMEOUT_MS  = 60 * 1000;  // 1 分钟没收到任何新数据 → 当作卡死,触发重试
 
   let lastErr = null;
@@ -2145,11 +2181,12 @@ async function continueRewrite(replyText) {
 
   // 把用户回复在输出区做一个视觉锚点
   appendUserReplyToOutput(reply);
+  const routerReply = expandSlashCommandForRouter(reply);
 
   // —— 编辑态:带「当前全剧本 + 编辑轮滚动对话」,不带阶段一历史;178 可反问 ——
   if (session.phase === 'edit') {
     if (!session.editLog) session.editLog = [];
-    session.editLog.push({ role: 'user', text: reply });
+    session.editLog.push({ role: 'user', text: routerReply });
     session.routerContent    = buildEditRequest(session.scriptSnapshot, session.editLog);
     session.userConversation = session.routerContent;
     session.capturing = false; session.scriptBuf = '';
@@ -2165,20 +2202,45 @@ async function continueRewrite(replyText) {
   session.routerContent =
     session.routerContent + '\n\n' +
     session.lastRouterOutput + '\n\n' +
-    reply;
+    routerReply;
 
   // 同步把这次的「上一轮终稿 + 用户回复」也并入干净的用户视角对话历史,
   // 让下一轮调用的子模型能看到用户最新的要求,而不是只盯着最初的原文。
   session.userConversation =
     session.userConversation + '\n\n' +
     session.lastRouterOutput + '\n\n' +
-    reply;
+    routerReply;
   session.stallNudges = 0;   // 用户手动推进 —— 重置自动催促额度
 
   removeReplyBox();
   removeNextStepPanel();
 
   await runOrchestration({ statusOnStart: '继续对话…' });
+}
+
+function expandSlashCommandForRouter(reply) {
+  const text = String(reply || '').trim();
+  const episode = text.match(/^\/episode\s+(\d+)\s*$/i);
+  if (episode) {
+    const n = parseInt(episode[1], 10);
+    return [
+      `用户输入了斜杠命令: ${text}`,
+      `请严格执行:只生成第 ${n} 集的单集完整剧本,不要生成其他集,不要跳到第 ${n + 8} 集或任何别的集。`,
+      `必须先加载 <load_kb>episode-detail</load_kb> 获取逐集细化规范;如需要连续性校验,可再加载 <load_kb>state-tracking</load_kb>。`,
+      `输出标题必须以「# 第${n}集」或「【第${n}集」开头。`,
+    ].join('\n');
+  }
+
+  const plan = text.match(/^\/plan\s*$/i);
+  if (plan) {
+    return [
+      `用户输入了斜杠命令: ${text}`,
+      '请严格执行:进入故事骨架/分集大纲规划阶段,不要直接撰写单集正文。',
+      '必须按需加载 <load_kb>opening-rules,paywall-design,rhythm-curve,satisfaction-matrix</load_kb>。',
+    ].join('\n');
+  }
+
+  return text;
 }
 
 /** 构造给 router(178)的请求 content。
