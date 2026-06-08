@@ -3496,6 +3496,10 @@ function _saveCurrentSessionToHistory() {
     modelName: (typeof ROUTER_MODEL_NAME !== 'undefined' ? ROUTER_MODEL_NAME : ''),
     points: session.totalPointsCost || 0,
     durationMs: now - session.t0,
+    phase: session.phase || 'edit',
+    scriptSnapshot: session.scriptSnapshot || revised,
+    editLog: Array.isArray(session.editLog) ? session.editLog.slice(-30) : [],
+    lastRouterOutput: session.lastRouterOutput || revised,
   };
 
   if (idx >= 0) arr.splice(idx, 1);           // 先把旧的拿掉,稍后插到最前
@@ -3626,14 +3630,39 @@ function restoreHistoryEntry(id) {
   out.appendChild(span);
   $('outputCount').textContent = (it.revised || '').length + ' 字';
 
-  // 重置内部 session 状态,避免按"继续"时基于不存在的上下文跑请求
-  session = null;
+  // 还原为可继续编辑的 session。旧历史没有 scriptSnapshot 时,用 revised 兜底,
+  // 至少能围绕当前改后稿继续提修改要求。
+  const restoredScript = it.scriptSnapshot || it.revised || '';
+  session = {
+    baseContent: it.original || '',
+    routerContent: buildEditRequest(restoredScript, Array.isArray(it.editLog) ? it.editLog : []),
+    userConversation: '',
+    loadedIds: new Set(),
+    totalLoads: 0,
+    lastExecutedId: null,
+    t0: it.id || Date.now(),
+    totalPointsCost: it.points || 0,
+    finalBalance: null,
+    lastRouterOutput: it.lastRouterOutput || it.revised || '',
+    stallNudges: 0,
+    autoSteps: 0,
+    lastAutoOutput: '',
+    phase: 'edit',
+    scriptSnapshot: restoredScript,
+    scriptBuf: '',
+    capturing: false,
+    editLog: Array.isArray(it.editLog) ? it.editLog.slice() : [],
+    stageIdx: -1,
+  };
+  session.userConversation = session.routerContent;
+
   if (typeof removeReplyBox === 'function')      removeReplyBox();
   if (typeof removeNextStepPanel === 'function') removeNextStepPanel();
+  showReplyBox();
   $('goBtn').disabled = false;
   $('stopBtn').classList.remove('show');
 
-  setStatus('已还原历史', '', '共 ' + (it.revised || '').length + ' 字 · 如需继续请重新点开始改文');
+  setStatus('已还原历史', 'done', '共 ' + (it.revised || '').length + ' 字 · 可直接在下方继续提修改要求');
   closeHistoryModal();
   toast('已还原「' + (it.title || '无标题') + '」');
 }
