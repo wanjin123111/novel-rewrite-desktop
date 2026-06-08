@@ -2220,24 +2220,42 @@ async function continueRewrite(replyText) {
 
 function expandSlashCommandForRouter(reply) {
   const text = String(reply || '').trim();
-  const episode = text.match(/^\/episode\s+(\d+)\s*$/i);
+  const episode = text.match(/^\/episode\s+(\d+)(?:\s+([\s\S]+))?$/i);
   if (episode) {
     const n = parseInt(episode[1], 10);
+    const extra = (episode[2] || '').trim();
     return [
       `用户输入了斜杠命令: ${text}`,
       `请严格执行:只生成第 ${n} 集的单集完整剧本,不要生成其他集,不要跳到第 ${n + 8} 集或任何别的集。`,
+      extra ? `用户对本集的额外要求:${extra}` : '',
+      extra ? '额外要求优先级很高,必须落实到本集正文里;如果额外要求包含字数范围,本集正文必须按该范围控制篇幅。' : '',
       `必须先加载 <load_kb>episode-detail</load_kb> 获取逐集细化规范;如需要连续性校验,可再加载 <load_kb>state-tracking</load_kb>。`,
       `输出标题必须以「# 第${n}集」或「【第${n}集」开头。`,
-    ].join('\n');
+      '不要回复“流程已结束”“已经交付”“等待新指令”等闲聊话术;本轮必须直接产出用户指定的单集剧本正文。',
+    ].filter(Boolean).join('\n');
   }
 
-  const plan = text.match(/^\/plan\s*$/i);
+  const characters = text.match(/^\/characters(?:\s+([\s\S]+))?$/i);
+  if (characters) {
+    const extra = (characters[1] || '').trim();
+    return [
+      `用户输入了斜杠命令: ${text}`,
+      '请严格执行:进入人物设定/角色档案/道具与秘密台账阶段,不要直接撰写单集正文。',
+      extra ? `用户额外要求:${extra}` : '',
+      '必须按需加载 <load_kb>villain-design,state-tracking</load_kb>。',
+      '输出应包含主要人物档案、关系与冲突、关键道具台账、秘密/信息台账,用于后续逐集写剧本时保持连续性。',
+    ].filter(Boolean).join('\n');
+  }
+
+  const plan = text.match(/^\/plan(?:\s+([\s\S]+))?$/i);
   if (plan) {
+    const extra = (plan[1] || '').trim();
     return [
       `用户输入了斜杠命令: ${text}`,
       '请严格执行:进入故事骨架/分集大纲规划阶段,不要直接撰写单集正文。',
+      extra ? `用户额外要求:${extra}` : '',
       '必须按需加载 <load_kb>opening-rules,paywall-design,rhythm-curve,satisfaction-matrix</load_kb>。',
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
 
   return text;
