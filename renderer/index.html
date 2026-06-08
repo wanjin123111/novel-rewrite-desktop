@@ -2176,7 +2176,7 @@ function newSession() {
 
 async function continueRewrite(replyText) {
   if (!session) { toast('没有进行中的对话,请先点开始改文', 'error'); return; }
-  const reply = (replyText || '').trim();
+  const reply = normalizeContinueReply(replyText);
   if (!reply) { toast('回复是空的', 'error'); return; }
 
   // 把用户回复在输出区做一个视觉锚点
@@ -2216,6 +2216,51 @@ async function continueRewrite(replyText) {
   removeNextStepPanel();
 
   await runOrchestration({ statusOnStart: '继续对话…' });
+}
+
+function normalizeContinueReply(replyText) {
+  const raw = String(replyText || '').trim();
+  const suggested = inferSuggestedSlashCommand();
+  if (!suggested) return raw;
+
+  if (!raw) return suggested;
+  const confirm = raw.match(/^(继续|确认|确定|可以|好的?|行|没问题|ok|yes|go)(?:[，,\s:：]*(.*))?$/i);
+  if (!confirm) return raw;
+
+  const extra = (confirm[2] || '').trim();
+  return extra ? `${suggested} ${extra}` : suggested;
+}
+
+function inferSuggestedSlashCommand() {
+  const recent = String(
+    (session && session.lastRouterOutput) ||
+    (document.getElementById('outputText') ? document.getElementById('outputText').innerText : '')
+  ).slice(-2400);
+  if (!recent) return '';
+
+  const candidates = [];
+  const patterns = [
+    /\/episode\s+(next|\d+(?:\s*-\s*\d+)?)/ig,
+    /\/characters\b/ig,
+    /\/outline\b/ig,
+    /\/plan\b/ig,
+    /\/start\b/ig,
+    /\/review\s+(all|\d+(?:\s*-\s*\d+)?)/ig,
+    /\/compliance\b/ig,
+    /\/export\b/ig,
+    /\/overseas\b/ig,
+  ];
+
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(recent)) !== null) {
+      candidates.push({ at: m.index, text: m[0].replace(/\s*-\s*/g, '-') });
+    }
+  }
+  if (!candidates.length) return '';
+
+  candidates.sort((a, b) => a.at - b.at);
+  return candidates[0].text.trim();
 }
 
 function expandSlashCommandForRouter(reply) {
@@ -2699,7 +2744,7 @@ function showReplyBox() {
   const ta = document.createElement('textarea');
   ta.className = 'reply-input';
   ta.id = 'replyInput';
-  ta.placeholder = '回答路由的反问、追加要求,或继续追问…(回车发送,Shift+Enter 换行)';
+  ta.placeholder = '留空点继续=按上方建议命令执行;也可直接写修改要求或追问…(回车发送,Shift+Enter 换行)';
   row.appendChild(ta);
 
   const btn = document.createElement('button');
