@@ -2878,7 +2878,8 @@ async function runOrchestration({ statusOnStart }) {
 
 /* ---------- 继续对话:回复框 / 用户回复视觉锚点 ---------- */
 
-function showReplyBox() {
+function showReplyBox(options) {
+  const forceVisible = !!(options && options.forceVisible);
   removeReplyBox();
   const out = $('outputText');
   const box = document.createElement('div');
@@ -2920,14 +2921,23 @@ function showReplyBox() {
   box.appendChild(row);
   out.appendChild(box);
 
-  // 聚焦输入框,但用 preventScroll 防止聚焦本身把视图拽到底。
-  setTimeout(() => ta.focus({ preventScroll: true }), 30);
+  // 聚焦输入框。普通输出不打断审阅;历史恢复必须把续写框带进视野,
+  // 否则长内容时用户会误以为没有对话框,转而点"开始改文"导致重开。
+  setTimeout(() => {
+    if (forceVisible) {
+      forceScrollBottom();
+      ta.focus();
+    } else {
+      ta.focus({ preventScroll: true });
+    }
+  }, 30);
 
   // 关键:不再无条件 forceScrollBottom()。
   //   · 用户本来就贴底跟读  → 顺势把回复框带进视野(forceScrollBottom)
   //   · 用户正在上方审阅原文/译文 → 绝不打断,只在右下角亮起「↓」箭头,
   //     用户想看最新内容时点一下即可到底。
-  if (_stickBottom) forceScrollBottom();
+  if (forceVisible) forceScrollBottom();
+  else if (_stickBottom) forceScrollBottom();
   else updateToBottomFab();
 }
 
@@ -3880,11 +3890,11 @@ function restoreHistoryEntry(id) {
 
   if (typeof removeReplyBox === 'function')      removeReplyBox();
   if (typeof removeNextStepPanel === 'function') removeNextStepPanel();
-  showReplyBox();
+  showReplyBox({ forceVisible: true });
   $('goBtn').disabled = false;
   $('stopBtn').classList.remove('show');
 
-  setStatus('已还原历史', 'done', '共 ' + (it.revised || '').length + ' 字 · 可直接在下方继续提修改要求');
+  setStatus('已还原历史', 'done', '共 ' + (it.revised || '').length + ' 字 · 在下方输入修改要求继续,不要点开始改文');
   closeHistoryModal();
   toast('已还原「' + (it.title || '无标题') + '」');
 }
