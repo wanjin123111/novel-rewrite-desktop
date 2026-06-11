@@ -231,6 +231,41 @@
     color: var(--ink-faint);
   }
 
+  /* 原大纲保护开关:二段式切换,沿用路由徽标的视觉语言 */
+  .outline-pill {
+    display: inline-flex; align-items: stretch;
+    background: #fbf7eb;
+    border: 1px solid var(--rule);
+    border-radius: 1px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .outline-pill-tag {
+    display: inline-flex; align-items: center;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px; letter-spacing: 2px;
+    color: var(--ink-faint); text-transform: uppercase;
+    padding: 0 9px;
+    background: var(--paper-deep);
+    border-right: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  .outline-seg {
+    appearance: none; border: none; background: transparent;
+    padding: 7px 13px;
+    font-size: 13px; color: var(--ink-soft);
+    cursor: pointer; white-space: nowrap;
+    transition: background .15s, color .15s;
+    font-family: inherit;
+  }
+  .outline-seg + .outline-seg { border-left: 1px solid var(--rule); }
+  .outline-seg:hover { background: var(--paper-deep); }
+  /* 保留=朱砂(守护态);重构=深墨(主动放开),用颜色区分语义 */
+  #outlineKeepBtn.active    { background: var(--vermillion); color: #fbf7eb; }
+  #outlineKeepBtn.active:hover { background: var(--vermillion-d); }
+  #outlineRebuildBtn.active { background: var(--ink-soft);    color: #fbf7eb; }
+  #outlineRebuildBtn.active:hover { background: var(--ink); }
+
   .btn-go {
     padding: 10px 28px;
     background: var(--vermillion);
@@ -1041,6 +1076,13 @@
       <span class="router-pill-tag">路由</span>
       <span id="routerPillName" class="router-pill-name">改文路由</span>
     </div>
+    <!-- 原大纲保护开关:决定 router 能否重排用户自带的大纲/分集结构 -->
+    <div id="outlinePill" class="outline-pill"
+         title="保留原文 = 不动你的大纲与事件/分集顺序,只在原结构上改写润色,想动结构会先列「优化建议」给你确认;系统重构 = 允许按爆款方法论自由重排节奏与结构">
+      <span class="outline-pill-tag">大纲</span>
+      <button type="button" id="outlineKeepBtn"    class="outline-seg active" data-mode="preserve">保留原文</button>
+      <button type="button" id="outlineRebuildBtn" class="outline-seg"        data-mode="restructure">系统重构</button>
+    </div>
     <!-- 旧的模型下拉框保留在 DOM 但隐藏,避免引用断裂;路由由 ROUTER_MODEL_KEY 模型标识锁死 -->
     <select id="modelSelect" class="model-select" style="display:none">
       <option value="178">178</option>
@@ -1215,6 +1257,9 @@ const LS = {
     if (v) localStorage.setItem('nr_style_override_' + id, v);
     else   localStorage.removeItem('nr_style_override_' + id);
   },
+  /** 原大纲保护开关:'preserve'(默认,保留原大纲) | 'restructure'(允许系统重构) */
+  get outlineMode() { return localStorage.getItem('nr_outline_mode') || 'preserve'; },
+  set outlineMode(v){ localStorage.setItem('nr_outline_mode', v === 'restructure' ? 'restructure' : 'preserve'); },
 };
 
 /* ---------- 改写风格预设 ----------
@@ -2099,6 +2144,75 @@ async function _streamOneCallOnce({ modelId, content, renderEl, showCaret, onDon
   }
 }
 
+/* ============ 原大纲保护开关 ============
+ * preserve    = 保留模式:router 不得重排/删改/合并用户自带的事件顺序与分集结构,
+ *               只能在原结构上改写润色;想动结构只能列「⚠️ 优化建议(未应用)」给用户逐条确认。
+ * restructure = 重构模式:允许 router 按爆款方法论自由重排节奏与结构。
+ * 选择持久化在 LS.outlineMode,默认 preserve —— 直接回应"系统别乱改我大纲"的用户反馈。
+ * 设计原则:宁可少改不可乱改;用户没主动放开之前一律按保留执行。 */
+function getOutlineMode() {
+  return LS.outlineMode === 'restructure' ? 'restructure' : 'preserve';
+}
+
+/** 注入给 router 的「大纲模式」指令块。首轮随原文带上(见 startRewrite),
+ *  中途切换也会追加一条(见 setOutlineMode)。用方括号包成显式系统指示,
+ *  和 expandSlashCommandForRouter 里那批约束同一性质,不会和用户正文混淆。 */
+function outlineModeDirective() {
+  if (getOutlineMode() === 'preserve') {
+    return [
+      '【大纲模式：保留原大纲｜本次硬约束，优先级高于任何"优化节奏/提升爽点"的理由】',
+      '用户自带了大纲/原文结构。整个流程的任何阶段，都不得重排、删改、合并、新增用户原有的事件顺序与章节/分集结构。',
+      '· 进入故事骨架(/plan)：只把三幕、付费卡点、爽点【映射】到原有事件顺序上，不另起一套大纲、不挪动事件先后。',
+      '· 进入分集目录(/outline)：沿用原大纲的分集与顺序，只补 🔥/💰 标记和连续性台账；🔥💰 的数量指标降级为"只检查、只提示"，达不到也不准为凑指标改结构。',
+      '· 进入人物阶段(/characters)：不擅自改动人物关系、不增删主角。',
+      '· 进入写集阶段(/episode)：单集剧情必须落在该集原大纲事件范围内，细节可丰富、事件不可改。',
+      '· 凡你认为"应该改"的结构问题，一律写进「⚠️ 优化建议（未应用）」清单：问题 + 理由 + 你的改法，但【不要】直接动正文，等用户逐条点头后才应用；用户没同意的部分原样保留。',
+      '（用户若说"第 N 集可以改"，只解锁那一集；说"整体交给你重构"，则切到重构模式；其余仍按保留。）',
+    ].join('\n');
+  }
+  return '【大纲模式：系统重构】用户已授权按爆款短剧方法论自由优化结构与节奏：可重排事件、调整分集、增删卡点与爽点，以最终成片效果为准。';
+}
+
+/** 保留模式下,在斜杠命令展开里补一条提醒(防长上下文里把首轮约束忘了)。 */
+function outlineReminderLine() {
+  return getOutlineMode() === 'preserve'
+    ? '【大纲模式=保留】严禁重排/删改/合并原大纲的事件顺序与分集结构；只能在原结构上改写润色，要动结构请改走「⚠️ 优化建议（未应用）」清单交用户确认，未同意的原样保留。'
+    : '';
+}
+
+/** 把开关的视觉状态同步到当前 LS.outlineMode(启动时 + 每次切换后调用)。 */
+function syncOutlineToggleUI() {
+  const mode = getOutlineMode();
+  const keep    = document.getElementById('outlineKeepBtn');
+  const rebuild = document.getElementById('outlineRebuildBtn');
+  if (keep)    keep.classList.toggle('active',    mode === 'preserve');
+  if (rebuild) rebuild.classList.toggle('active', mode === 'restructure');
+}
+
+/** 切换大纲模式。会持久化、刷新 UI;若有进行中的会话,追加一条切换指令,
+ *  让下一轮 router 立刻按新模式走(支持随时切换,且不回头重做已确认的产物)。 */
+function setOutlineMode(mode) {
+  const next = mode === 'restructure' ? 'restructure' : 'preserve';
+  const changed = next !== getOutlineMode();
+  LS.outlineMode = next;
+  syncOutlineToggleUI();
+  if (!changed) return;
+
+  if (session) {
+    const note = '【用户在流程中途切换了大纲模式】\n' + outlineModeDirective() +
+                 '\n（已产出并确认过的内容不必回头重做，从下一步起按新模式执行即可。）';
+    session.routerContent    = (session.routerContent    || '') + '\n\n' + note;
+    session.userConversation = (session.userConversation || '') + '\n\n' + note;
+    toast(next === 'preserve'
+      ? '已切到「保留原大纲」—— 后续步骤不再动你的结构'
+      : '已切到「系统重构」—— 后续步骤可自由优化结构', 'ok');
+  } else {
+    toast(next === 'preserve'
+      ? '已设为「保留原大纲」:开始改文后不动你的大纲结构'
+      : '已设为「系统重构」:开始改文后允许按方法论重排结构', 'ok');
+  }
+}
+
 /** 当前对话会话的状态（跨调用、跨"继续"按钮持续存在,直到下一次 startRewrite 重置）。
  *  routerContent 是要喂给下一轮 router 的内容 —— 我们把"之前的全部 + 新输入"裸地接起来,
  *  不加任何前端自写的提示词标签,router 的纪律由它自己的系统提示词管。 */
@@ -2108,9 +2222,11 @@ async function startRewrite() {
   const content = $('inputText').value;
   if (!content.trim()) { toast('原文还是空的呢', 'error'); return; }
 
-  // 178 模型在后端「系统提示词」字段里已经存了写作技能 A 段,
-  // 这里不在用户原文前面拼任何前端自写的提示词,直接裸调。
+  // 178 模型在后端「系统提示词」字段里已经存了写作技能 A 段。
+  // 这里不在用户原文里掺东西(baseContent 保持纯原文,供历史存档/快照用),
+  // 只把「大纲模式」指令作为显式系统指示,拼到喂给 router/子模型的上下文最前面。
   const baseContent = content;
+  const outlineDirective = outlineModeDirective();
 
   // (已移除:原本这里有 baseContent.length > 100000 的硬阻断。)
   // 前端不再设字符上限,真正的天花板在后端模型上下文窗口,由后端报错来兜底。
@@ -2118,12 +2234,12 @@ async function startRewrite() {
   // 新会话 —— 清状态,清 UI
   session = {
     baseContent,
-    routerContent: baseContent,
+    routerContent: outlineDirective + '\n\n' + baseContent,
     // userConversation:干净的「用户视角」对话历史,供子模型(160-168, 169-172, 174-177, 179, 180)使用。
     // 与 routerContent 的区别:不含 <load_model> 标签 / [回喂开始-结束] 标记 / 子模型回喂内容,
     // 只累积「原文 + 历轮终稿 + 用户回复/引导」。
     // 修复 Bug:之前子模型只收 baseContent,中间对话时看不到用户的新要求,导致上下文断裂。
-    userConversation: baseContent,
+    userConversation: outlineDirective + '\n\n' + baseContent,
     loadedIds: new Set(),
     totalLoads: 0,         // 实际加载次数(包括重复加载) —— 用于状态显示
     lastExecutedId: null,  // 上一次成功加载的子模型 ID
@@ -2276,6 +2392,7 @@ function expandSlashCommandForRouter(reply) {
       extra ? '额外要求优先级很高,必须落实到本集正文里;如果额外要求包含字数范围,本集正文必须按该范围控制篇幅。' : '',
       `必须先加载 <load_kb>episode-detail</load_kb> 获取逐集细化规范;如需要连续性校验,可再加载 <load_kb>state-tracking</load_kb>。`,
       `输出标题必须以「# 第${n}集」或「【第${n}集」开头。`,
+      outlineReminderLine(),
       '不要回复“流程已结束”“已经交付”“等待新指令”等闲聊话术;本轮必须直接产出用户指定的单集剧本正文。',
     ].filter(Boolean).join('\n');
   }
@@ -2288,6 +2405,7 @@ function expandSlashCommandForRouter(reply) {
       '请严格执行:进入人物设定/角色档案/道具与秘密台账阶段,不要直接撰写单集正文。',
       extra ? `用户额外要求:${extra}` : '',
       '必须按需加载 <load_kb>villain-design,state-tracking</load_kb>。',
+      outlineReminderLine(),
       '输出应包含主要人物档案、关系与冲突、关键道具台账、秘密/信息台账,用于后续逐集写剧本时保持连续性。',
     ].filter(Boolean).join('\n');
   }
@@ -2300,6 +2418,22 @@ function expandSlashCommandForRouter(reply) {
       '请严格执行:进入故事骨架/分集大纲规划阶段,不要直接撰写单集正文。',
       extra ? `用户额外要求:${extra}` : '',
       '必须按需加载 <load_kb>opening-rules,paywall-design,rhythm-curve,satisfaction-matrix</load_kb>。',
+      getOutlineMode() === 'preserve'
+        ? '【保留模式】只把三幕/卡点/爽点【映射】到用户原大纲的事件顺序上，不另起一套大纲、不挪动事件先后；想动结构只列「⚠️ 优化建议（未应用）」交用户确认。'
+        : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  const outline = text.match(/^\/outline(?:\s+([\s\S]+))?$/i);
+  if (outline) {
+    const extra = (outline[1] || '').trim();
+    return [
+      `用户输入了斜杠命令: ${text}`,
+      '请严格执行:进入分集目录阶段,产出逐集一行的分集大纲,不要直接撰写单集正文。',
+      extra ? `用户额外要求:${extra}` : '',
+      getOutlineMode() === 'preserve'
+        ? '【保留模式｜本命令最关键】沿用用户原大纲的分集与先后顺序，逐集一一对应，不重排、不合并、不增删集；只在每集后补 🔥/💰 标记和连续性台账。🔥💰 数量指标降级为"只检查、只提示"，达不到也不准为凑指标改结构。发现结构问题写进「⚠️ 优化建议（未应用）」交用户逐条确认。'
+        : '允许按节奏曲线重排/合并分集，优化卡点与爽点分布。',
     ].filter(Boolean).join('\n');
   }
 
@@ -3846,6 +3980,13 @@ function bindEvents() {
   $('goBtn').addEventListener('click', startRewrite);
   $('stopBtn').addEventListener('click', stopRewrite);
   $('newSessionBtn').addEventListener('click', newSession);
+
+  // 原大纲保护开关:点哪段切哪个模式;启动时按持久化的选择回显
+  syncOutlineToggleUI();
+  ['outlineKeepBtn', 'outlineRebuildBtn'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', () => setOutlineMode(btn.dataset.mode));
+  });
 
   // 输入字数统计
   $('inputText').addEventListener('input', () => {
