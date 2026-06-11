@@ -2471,6 +2471,24 @@ function buildEditRequest(script, log) {
          convo;
 }
 
+/** 兼容旧历史:有些历史只存了面板文本,没有完整 session。
+ *  恢复时仍然要能围绕当前稿继续改,所以把原文/改后稿/上一轮输出拼成编辑态上下文。 */
+function buildHistoryResumeRequest(entry, restoredScript, editLog) {
+  if (entry && entry.routerContent) return entry.routerContent;
+
+  let req = buildEditRequest(restoredScript, editLog);
+  const original = (entry && entry.original || '').trim();
+  const revised = (entry && entry.revised || '').trim();
+  if (original && !restoredScript) {
+    req += '\n\n【旧历史兜底·用户原文】\n' + original;
+  }
+  if (revised && revised !== restoredScript) {
+    req += '\n\n【旧历史兜底·历史输出】\n' + revised;
+  }
+  req += '\n\n【恢复历史说明】这是从本地历史恢复的旧记录。用户接下来会在输入框继续提出修改要求;请基于上面的当前稿和历史输出继续编辑,不要要求用户重新开始。';
+  return req;
+}
+
 /** 编辑轮里 178 没出新剧本(在反问/对话):记进 editLog,弹回复框等用户,不动快照。 */
 function editAwaitReply(out, routerOutput) {
   session.lastRouterOutput = routerOutput;
@@ -3697,6 +3715,8 @@ function _saveCurrentSessionToHistory() {
     scriptSnapshot: session.scriptSnapshot || revised,
     editLog: Array.isArray(session.editLog) ? session.editLog.slice(-30) : [],
     lastRouterOutput: session.lastRouterOutput || revised,
+    routerContent: session.routerContent || '',
+    userConversation: session.userConversation || '',
   };
 
   if (idx >= 0) arr.splice(idx, 1);           // 先把旧的拿掉,稍后插到最前
@@ -3830,10 +3850,16 @@ function restoreHistoryEntry(id) {
   // 还原为可继续编辑的 session。旧历史没有 scriptSnapshot 时,用 revised 兜底,
   // 至少能围绕当前改后稿继续提修改要求。
   const restoredScript = it.scriptSnapshot || it.revised || '';
+  const restoredEditLog = Array.isArray(it.editLog) ? it.editLog.slice() : [];
+  const restoredLast = (it.lastRouterOutput || it.revised || '').trim();
+  if (restoredLast && !restoredEditLog.some(x => x && x.role === 'assistant' && x.text === restoredLast)) {
+    restoredEditLog.push({ role: 'assistant', text: restoredLast });
+  }
+  const restoredRouterContent = buildHistoryResumeRequest(it, restoredScript, restoredEditLog);
   session = {
     baseContent: it.original || '',
-    routerContent: buildEditRequest(restoredScript, Array.isArray(it.editLog) ? it.editLog : []),
-    userConversation: '',
+    routerContent: restoredRouterContent,
+    userConversation: it.userConversation || restoredRouterContent,
     loadedIds: new Set(),
     totalLoads: 0,
     lastExecutedId: null,
@@ -3848,10 +3874,9 @@ function restoreHistoryEntry(id) {
     scriptSnapshot: restoredScript,
     scriptBuf: '',
     capturing: false,
-    editLog: Array.isArray(it.editLog) ? it.editLog.slice() : [],
+    editLog: restoredEditLog,
     stageIdx: -1,
   };
-  session.userConversation = session.routerContent;
 
   if (typeof removeReplyBox === 'function')      removeReplyBox();
   if (typeof removeNextStepPanel === 'function') removeNextStepPanel();
