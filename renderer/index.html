@@ -1216,7 +1216,7 @@
       <span id="historyCount" class="history-count-pill">0 条</span>
       <span class="spacer"></span>
       <button id="historyOpenFolderBtn" type="button" title="打开本机自动备份的历史记录文件夹">打开历史目录</button>
-      <button id="historyImportBtn" type="button" title="从备份 JSON 还原历史">导入备份</button>
+      <button id="historyImportBtn" type="button" title="选择 全部历史索引.json 恢复全部，或选择单条 history.json 直接回填继续编辑">导入/回填历史</button>
       <button id="historyExportBtn" type="button" title="把所有历史打包成 JSON 下载">导出备份</button>
       <button id="historyClearBtn"  type="button" class="danger" title="删除所有历史(不可恢复)">清 空</button>
     </div>
@@ -3955,17 +3955,22 @@ async function importHistoryJsonFromFile(file) {
     const text = await file.text();
     const data = JSON.parse(text);
     let items = [];
+    let shouldRestoreSingle = false;
     if (Array.isArray(data)) {
       // 兜底:有人直接拿数组喂进来
       items = data;
     } else if (data && Array.isArray(data.items)) {
       items = data.items;
+    } else if (data && typeof data === 'object' && (data.original || data.revised || data.scriptSnapshot || data.routerContent || data.userConversation)) {
+      // 单个历史文件夹里的 history.json
+      items = [data];
+      shouldRestoreSingle = true;
     } else {
-      toast('文件格式不对,不是改文历史备份', 'error');
+      toast('文件格式不对,请选择 全部历史索引.json 或单条 history.json', 'error');
       return;
     }
     // 基本结构校验,过滤掉脏数据
-    items = items.filter(it => it && typeof it === 'object' && (it.original || it.revised));
+    items = items.filter(it => it && typeof it === 'object' && (it.original || it.revised || it.scriptSnapshot || it.routerContent || it.userConversation));
 
     if (items.length === 0) { toast('备份里没有有效条目', 'error'); return; }
 
@@ -3977,6 +3982,10 @@ async function importHistoryJsonFromFile(file) {
     items.forEach(it => {
       // 缺 id 就用 ts/Date.now 顶一个
       if (it.id == null) it.id = it.ts || Date.now() + Math.floor(Math.random()*1000);
+      if (it.ts == null) it.ts = it.id;
+      if (it.updatedTs == null) it.updatedTs = it.ts || Date.now();
+      if (!it.title) it.title = _historyMakeTitle(it.original || it.revised || it.scriptSnapshot || '');
+      if (!it.revised && it.scriptSnapshot) it.revised = it.scriptSnapshot;
       if (map.has(it.id)) {
         const old = map.get(it.id);
         if ((it.updatedTs || 0) >= (old.updatedTs || 0)) {
@@ -3995,7 +4004,11 @@ async function importHistoryJsonFromFile(file) {
     const res = _historyPersist(merged);
     renderHistoryList();
     if (res.ok) {
-      toast(`已导入 · 新增 ${added} 条 · 更新 ${updated} 条`);
+      if (shouldRestoreSingle && items.length === 1) {
+        restoreHistoryEntry(items[0].id);
+      } else {
+        toast(`已导入 · 新增 ${added} 条 · 更新 ${updated} 条`);
+      }
     } else {
       toast('部分导入成功,但本地空间满了,有条目被丢弃', 'error');
     }

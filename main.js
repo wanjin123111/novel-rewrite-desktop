@@ -117,6 +117,14 @@ function backupHistoryEntryToDisk(entry) {
     `轮次: ${entry.rounds || 1}`,
     `积分: ${entry.points || 0}`,
     `阶段: ${entry.phase || ''}`,
+    '',
+    '恢复这一条历史:',
+    '1. 打开软件的【历史】。',
+    '2. 点【导入/回填历史】。',
+    '3. 选择本文件夹里的 history.json，软件会自动回填到编辑界面。',
+    '',
+    '恢复全部历史:',
+    '返回上一级“改文历史备份”目录，选择 全部历史索引.json。',
   ].join('\n');
 
   writeTextFile(path.join(dir, '说明.txt'), meta);
@@ -149,7 +157,27 @@ function backupHistorySnapshotToDisk(items) {
       console.warn('[history-backup] entry failed:', err && (err.stack || err.message || err));
     }
   }
-  writeTextFile(path.join(root, '全部历史索引.json'), JSON.stringify(arr, null, 2));
+  writeTextFile(path.join(root, '全部历史索引.json'), JSON.stringify({
+    app: 'gaiwen',
+    type: 'history-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    count: arr.length,
+    items: arr,
+  }, null, 2));
+  writeTextFile(path.join(root, '怎么恢复历史.txt'), [
+    '改文历史恢复说明',
+    '',
+    '恢复全部历史:',
+    '1. 打开软件，点【历史】。',
+    '2. 点【导入/回填历史】。',
+    '3. 选择本目录里的 全部历史索引.json。',
+    '',
+    '恢复某一条历史:',
+    '1. 进入对应的历史文件夹。',
+    '2. 选择里面的 history.json。',
+    '3. 软件会自动把这条历史回填到编辑界面。',
+  ].join('\n'));
   return { root, count };
 }
 
