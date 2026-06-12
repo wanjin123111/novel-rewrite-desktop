@@ -6,9 +6,10 @@
  *  不用动。
  * ================================================================= */
 
-const { app, BrowserWindow, Menu, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
+const fs = require('fs');
 
 let mainWindow = null;
 let updateReady = false;
@@ -51,6 +52,138 @@ function checkForUpdatesSoon() {
   }, 3000);
 }
 
+function safeFileName(name, fallback) {
+  return String(name || fallback || '未命名')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 90) || fallback || '未命名';
+}
+
+function safeNamePart(name, fallback, maxLen = 64) {
+  const clean = safeFileName(name, fallback);
+  return clean.length > maxLen ? clean.slice(0, maxLen) : clean;
+}
+
+function dateStamp(ms) {
+  const d = new Date(Number(ms) || Date.now());
+  const pad = (n) => String(n).padStart(2, '0');
+  return [
+    d.getFullYear(),
+    pad(d.getMonth() + 1),
+    pad(d.getDate()),
+    '-',
+    pad(d.getHours()),
+    pad(d.getMinutes()),
+    pad(d.getSeconds()),
+  ].join('');
+}
+
+function historyBackupRoot() {
+  return path.join(app.getPath('documents'), '改文历史备份');
+}
+
+function findHistoryEntryDir(root, id) {
+  if (!id || !fs.existsSync(root)) return null;
+  const prefix = `${id}-`;
+  const found = fs.readdirSync(root, { withFileTypes: true })
+    .find((item) => item.isDirectory() && item.name.startsWith(prefix));
+  return found ? path.join(root, found.name) : null;
+}
+
+function historyEntryDir(entry) {
+  const root = historyBackupRoot();
+  fs.mkdirSync(root, { recursive: true });
+  const id = String(entry && entry.id ? entry.id : Date.now());
+  const existing = findHistoryEntryDir(root, id);
+  if (existing) return existing;
+  const title = safeNamePart(entry && entry.title, '无标题');
+  return path.join(root, `${id}-${dateStamp(entry && (entry.updatedTs || entry.ts || entry.id))}-${title}`);
+}
+
+function writeTextFile(file, text) {
+  fs.writeFileSync(file, String(text || ''), 'utf8');
+}
+
+function backupHistoryEntryToDisk(entry) {
+  if (!entry || !entry.id) throw new Error('缺少历史记录 ID');
+  const dir = historyEntryDir(entry);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const meta = [
+    `标题: ${entry.title || '无标题'}`,
+    `创建时间: ${new Date(entry.ts || entry.id || Date.now()).toLocaleString()}`,
+    `更新时间: ${new Date(entry.updatedTs || entry.ts || entry.id || Date.now()).toLocaleString()}`,
+    `轮次: ${entry.rounds || 1}`,
+    `积分: ${entry.points || 0}`,
+    `阶段: ${entry.phase || ''}`,
+  ].join('\n');
+
+  writeTextFile(path.join(dir, '说明.txt'), meta);
+  writeTextFile(path.join(dir, '原文.txt'), entry.original || '');
+  writeTextFile(path.join(dir, '改后.txt'), entry.revised || '');
+  writeTextFile(path.join(dir, '继续上下文.txt'), [
+    'lastRouterOutput:',
+    entry.lastRouterOutput || '',
+    '',
+    'routerContent:',
+    entry.routerContent || '',
+    '',
+    'userConversation:',
+    entry.userConversation || '',
+  ].join('\n'));
+  writeTextFile(path.join(dir, 'history.json'), JSON.stringify(entry, null, 2));
+  return dir;
+}
+
+function backupHistorySnapshotToDisk(items) {
+  const arr = Array.isArray(items) ? items.filter(Boolean) : [];
+  const root = historyBackupRoot();
+  fs.mkdirSync(root, { recursive: true });
+  let count = 0;
+  for (const entry of arr) {
+    try {
+      backupHistoryEntryToDisk(entry);
+      count += 1;
+    } catch (err) {
+      console.warn('[history-backup] entry failed:', err && (err.stack || err.message || err));
+    }
+  }
+  writeTextFile(path.join(root, '全部历史索引.json'), JSON.stringify(arr, null, 2));
+  return { root, count };
+}
+
+function setupHistoryIpc() {
+  ipcMain.handle('history:backup-entry', (_event, entry) => {
+    try {
+      const dir = backupHistoryEntryToDisk(entry);
+      return { ok: true, path: dir };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('history:backup-snapshot', (_event, items) => {
+    try {
+      return { ok: true, ...backupHistorySnapshotToDisk(items) };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('history:open-folder', async (_event, items) => {
+    try {
+      if (Array.isArray(items)) backupHistorySnapshotToDisk(items);
+      const root = historyBackupRoot();
+      fs.mkdirSync(root, { recursive: true });
+      const error = await shell.openPath(root);
+      return error ? { ok: false, error, path: root } : { ok: true, path: root };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -61,6 +194,8 @@ function createWindow() {
     title: '改文 · 小说去AI味',
     autoHideMenuBar: true,                // 菜单栏默认隐藏，按 Alt 才出来，更像正经软件
     webPreferences: {
+      preload: path.join(__dirname, 'renderer', 'preload-main.js'),
+
       // ↓↓↓ 关键设置 ↓↓↓
       // 关掉浏览器的同源策略（CORS）。因为这个桌面应用要直接调用你
       // 自己的后端接口（跨域请求），桌面端没有网页那种安全顾虑，
@@ -146,6 +281,7 @@ function buildMenu() {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(buildMenu());
   setupAutoUpdater();
+  setupHistoryIpc();
   createWindow();
   checkForUpdatesSoon();
 

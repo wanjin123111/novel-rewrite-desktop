@@ -1215,6 +1215,7 @@
     <div class="history-toolbar">
       <span id="historyCount" class="history-count-pill">0 条</span>
       <span class="spacer"></span>
+      <button id="historyOpenFolderBtn" type="button" title="打开本机自动备份的历史记录文件夹">打开历史目录</button>
       <button id="historyImportBtn" type="button" title="从备份 JSON 还原历史">导入备份</button>
       <button id="historyExportBtn" type="button" title="把所有历史打包成 JSON 下载">导出备份</button>
       <button id="historyClearBtn"  type="button" class="danger" title="删除所有历史(不可恢复)">清 空</button>
@@ -3696,6 +3697,18 @@ function _fmtTs(ms) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function _backupHistoryEntryToDisk(entry) {
+  try {
+    if (window.gaiwenDesktop && window.gaiwenDesktop.backupHistoryEntry) {
+      window.gaiwenDesktop.backupHistoryEntry(entry).catch(err => {
+        console.warn('[history] disk backup failed', err);
+      });
+    }
+  } catch (err) {
+    console.warn('[history] disk backup bridge failed', err);
+  }
+}
+
 /** 完成一轮后调用:把当前 session + 两个面板的内容存进历史(按 t0 upsert) */
 function _saveCurrentSessionToHistory() {
   if (!session || !session.t0) return;        // 没有正在跑的 session,跳过
@@ -3740,6 +3753,7 @@ function _saveCurrentSessionToHistory() {
   if (res.evicted > 0) {
     toast(`本地空间已满,自动清理了 ${res.evicted} 条最旧的历史`);
   }
+  _backupHistoryEntryToDisk(entry);
   // 若历史 modal 当前正打开,实时刷新
   const hm = document.getElementById('historyModal');
   if (hm && hm.classList.contains('show')) renderHistoryList();
@@ -4119,6 +4133,7 @@ function bindEvents() {
   const historyModalClose   = $('historyModalClose');
   const historyClearBtn     = $('historyClearBtn');
   const historyExportBtn    = $('historyExportBtn');
+  const historyOpenFolderBtn = $('historyOpenFolderBtn');
   const historyImportBtn    = $('historyImportBtn');
   const historyImportInput  = $('historyImportInput');
 
@@ -4126,6 +4141,21 @@ function bindEvents() {
   if (historyModalClose) historyModalClose.addEventListener('click', closeHistoryModal);
   if (historyClearBtn)   historyClearBtn.addEventListener('click', clearAllHistory);
   if (historyExportBtn)  historyExportBtn.addEventListener('click', exportHistoryJson);
+  if (historyOpenFolderBtn) {
+    historyOpenFolderBtn.addEventListener('click', async () => {
+      try {
+        if (!window.gaiwenDesktop || !window.gaiwenDesktop.openHistoryFolder) {
+          toast('当前环境不支持打开历史目录', 'error');
+          return;
+        }
+        const res = await window.gaiwenDesktop.openHistoryFolder(_historyLoad());
+        if (res && res.ok) toast('已打开历史目录');
+        else toast('打开历史目录失败: ' + (res && res.error ? res.error : '未知错误'), 'error');
+      } catch (err) {
+        toast('打开历史目录失败: ' + (err && err.message ? err.message : err), 'error');
+      }
+    });
+  }
   if (historyImportBtn && historyImportInput) {
     historyImportBtn.addEventListener('click', () => historyImportInput.click());
     historyImportInput.addEventListener('change', e => {
