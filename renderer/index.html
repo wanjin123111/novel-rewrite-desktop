@@ -1096,6 +1096,7 @@
     </button>
     <div class="spacer" style="flex:1"></div>
     <button id="historyBtn" class="btn-ghost" title="查看之前的对话历史(自动保存在本地浏览器)">历 史</button>
+    <button id="videoSnifferBtn" class="btn-ghost" title="打开内置浏览器,嗅探当前网页里的视频/音频资源">视频抓取</button>
     <button id="newSessionBtn" class="btn-ghost" title="清空原文与译文,开始全新的一篇(当前对话会被清掉)">新 会 话</button>
     <button id="stopBtn" class="btn-stop">中 止</button>
     <button id="goBtn" class="btn-go">开 始 改 文</button>
@@ -4149,26 +4150,37 @@ function bindEvents() {
   const historyOpenFolderBtn = $('historyOpenFolderBtn');
   const historyImportBtn    = $('historyImportBtn');
   const historyImportInput  = $('historyImportInput');
+  const videoSnifferBtn     = $('videoSnifferBtn');
 
   if (historyBtn)        historyBtn.addEventListener('click', openHistoryModal);
+  if (videoSnifferBtn)   videoSnifferBtn.addEventListener('click', async () => {
+    try {
+      if (!window.gaiwenDesktop || !window.gaiwenDesktop.openVideoSniffer) {
+        toast('当前环境不支持视频抓取窗口', 'error');
+        return;
+      }
+      await window.gaiwenDesktop.openVideoSniffer();
+    } catch (err) {
+      toast('视频抓取窗口打开失败: ' + (err && err.message ? err.message : err), 'error');
+    }
+  });
+  if (historyOpenFolderBtn) historyOpenFolderBtn.addEventListener('click', async () => {
+    try {
+      if (!window.gaiwenDesktop || !window.gaiwenDesktop.openHistoryFolder) {
+        toast('当前环境不支持打开历史目录', 'error');
+        return;
+      }
+      const arr = _historyLoad();
+      const res = await window.gaiwenDesktop.openHistoryFolder(arr);
+      if (res && res.ok) toast('已打开历史目录');
+      else toast('打开历史目录失败: ' + (res && res.error ? res.error : '未知错误'), 'error');
+    } catch (err) {
+      toast('打开历史目录失败: ' + (err && err.message ? err.message : err), 'error');
+    }
+  });
   if (historyModalClose) historyModalClose.addEventListener('click', closeHistoryModal);
   if (historyClearBtn)   historyClearBtn.addEventListener('click', clearAllHistory);
   if (historyExportBtn)  historyExportBtn.addEventListener('click', exportHistoryJson);
-  if (historyOpenFolderBtn) {
-    historyOpenFolderBtn.addEventListener('click', async () => {
-      try {
-        if (!window.gaiwenDesktop || !window.gaiwenDesktop.openHistoryFolder) {
-          toast('当前环境不支持打开历史目录', 'error');
-          return;
-        }
-        const res = await window.gaiwenDesktop.openHistoryFolder(_historyLoad());
-        if (res && res.ok) toast('已打开历史目录');
-        else toast('打开历史目录失败: ' + (res && res.error ? res.error : '未知错误'), 'error');
-      } catch (err) {
-        toast('打开历史目录失败: ' + (err && err.message ? err.message : err), 'error');
-      }
-    });
-  }
   if (historyImportBtn && historyImportInput) {
     historyImportBtn.addEventListener('click', () => historyImportInput.click());
     historyImportInput.addEventListener('change', e => {

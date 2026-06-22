@@ -1,0 +1,47 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+function on(channel, callback) {
+  const listener = (_event, payload) => callback(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
+contextBridge.exposeInMainWorld('videoSniffer', {
+  navigate: (url) => ipcRenderer.invoke('video-sniffer:navigate', url),
+  closeWindow: () => ipcRenderer.invoke('video-sniffer:close'),
+  extractPageMedia: (url) => ipcRenderer.invoke('video-sniffer:extract-page-media', url),
+  openEpisode: (episodeNo) => ipcRenderer.invoke('video-sniffer:open-episode', episodeNo),
+  playerAction: (action) => ipcRenderer.invoke('video-sniffer:player-action', action),
+  episodeList: () => ipcRenderer.invoke('video-sniffer:episode-list'),
+  pageInfo: () => ipcRenderer.invoke('video-sniffer:page-info'),
+  selectDirectory: () => ipcRenderer.invoke('video-sniffer:select-directory'),
+  selectAnalysisDirectory: () => ipcRenderer.invoke('video-sniffer:select-analysis-directory'),
+  selectAnalysisFiles: () => ipcRenderer.invoke('video-sniffer:select-analysis-files'),
+  getConfig: () => ipcRenderer.invoke('video-sniffer:get-config'),
+  getAuth: () => ipcRenderer.invoke('video-sniffer:get-auth'),
+  setDownloadDir: (dir) => ipcRenderer.invoke('video-sniffer:set-download-dir', dir),
+  selectLinkFile: () => ipcRenderer.invoke('video-sniffer:select-link-file'),
+  listVideoFiles: (rootDir) => ipcRenderer.invoke('video-sniffer:list-video-files', rootDir),
+  analyzeVideoFile: (payload) => ipcRenderer.invoke('video-sniffer:analyze-video-file', payload),
+  exportAnalyses: (payload) => ipcRenderer.invoke('video-sniffer:export-analyses', payload),
+  cancelVideoAnalysis: () => ipcRenderer.invoke('video-sniffer:cancel-video-analysis'),
+  browserCommand: (command) => ipcRenderer.invoke('video-sniffer:browser-command', command),
+  setViewBounds: (bounds) => ipcRenderer.invoke('video-sniffer:set-view-bounds', bounds),
+  getItems: () => ipcRenderer.invoke('video-sniffer:items'),
+  clear: () => ipcRenderer.invoke('video-sniffer:clear'),
+  copy: (text) => ipcRenderer.invoke('video-sniffer:copy', text),
+  openUrl: (url) => ipcRenderer.invoke('video-sniffer:open-url', url),
+  downloadUrl: (payload) => ipcRenderer.invoke('video-sniffer:download-url', payload),
+  mergeMp4: (payload) => ipcRenderer.invoke('video-sniffer:merge-mp4', payload),
+  mediaInfo: (filePath) => ipcRenderer.invoke('video-sniffer:media-info', filePath),
+  deleteFile: (filePath) => ipcRenderer.invoke('video-sniffer:delete-file', filePath),
+  removeEmptyDir: (payload) => ipcRenderer.invoke('video-sniffer:remove-empty-dir', payload),
+  saveSourceInfo: (payload) => ipcRenderer.invoke('video-sniffer:save-source-info', payload),
+  cancelMerges: () => ipcRenderer.invoke('video-sniffer:cancel-merges'),
+  onItem: (callback) => on('video-sniffer:item', callback),
+  onReset: (callback) => on('video-sniffer:reset', callback),
+  onBrowserState: (callback) => on('video-sniffer:browser-state', callback),
+  onDownload: (callback) => on('video-sniffer:download', callback),
+  onMerge: (callback) => on('video-sniffer:merge', callback),
+  onAnalysis: (callback) => on('video-sniffer:analysis', callback),
+});

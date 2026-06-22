@@ -4,12 +4,15 @@
 
 | 路径 | 作用 |
 | --- | --- |
-| `main.js` | Electron 主进程,创建窗口、菜单、外链打开、自动更新检查。 |
+| `main.js` | Electron 主进程,创建窗口、菜单、外链打开、自动更新检查、**视频抓取(嗅探/合成)**、历史磁盘备份。 |
 | `package.json` | 项目脚本、依赖、electron-builder 打包和 GitHub Release 发布配置。 |
 | `package-lock.json` | 依赖锁定文件。 |
 | `.gitignore` | 忽略 `node_modules/`、`release/`、`renderer.zip` 等。 |
 | `renderer/index.html` | UI、样式、登录、接口、路由编排、流式输出、历史、导入导出等核心逻辑。 |
 | `renderer/kb-data.js` | 本地知识库 `window.KB`。 |
+| `renderer/preload-main.js` | 主窗口 preload,暴露 `gaiwenDesktop`(打开视频抓取窗、历史磁盘备份)。 |
+| `renderer/video-sniffer.html` | 视频抓取窗 UI + 逻辑:内置浏览器、资源嗅探、整集整理、获取/下载全集。 |
+| `renderer/preload-video-sniffer.js` | 视频抓取窗 preload,暴露 `videoSniffer` 全部 IPC。 |
 | `release/` | 打包产物,不提交源码仓库。 |
 
 ## `main.js` 关键区域
@@ -29,6 +32,40 @@
 
 - `buildMenu()`
   - 复制、粘贴、刷新、开发者工具等菜单。
+
+## 视频抓取(video-sniffer)关键区域
+
+文档此前未记录此功能。它是独立的第二个窗口,跟改写主流程无关。
+
+### `main.js` 侧
+
+- `setupVideoSnifferSession()` / `createVideoSnifferWindow()` / `createVideoSnifferView()`
+  - 独立分区 `persist:gaiwen-video-sniffer` 的内置浏览器。
+  - `webRequest` 钩子嗅探媒体响应(`detectMediaResource`),推送给抓取窗。
+
+- `setupVideoSnifferIpc()`
+  - 全部 `video-sniffer:*` IPC handler。
+
+- `startMp4Merge()` / `buildFfmpegArgs()`
+  - 调内置 `ffmpeg-static` 把 m3u8/分片 `-c copy` 封装成 mp4。
+  - 支持 `payload.outputPath`(批量下载时跳过保存对话框)。
+
+- **`extract-page-media` 快速路径(扒页面抠全集)**
+  - `fetchPageHtml(url)`: 用 `net.request` 拉整页原始 HTML(带嗅探分区 Cookie、跟随重定向)。
+  - `extractPageMediaFromHtml(html)`: `unescapeForScan` 还原转义后,正则抠出全部 m3u8 + `totalEpisodes` + `<title>`。
+  - 适合 my-drama 这类把全集地址明文写在页面、CDN 公开无 token 的开放站,**不用播放/翻页/猜模板**。
+  - 集号解析不在主进程做,交渲染层 `extractResourceEpisodeNo` 统一处理。
+
+### `renderer/video-sniffer.html` 侧
+
+- `extractFromPageHtml()`
+  - 调 `api.extractPageMedia`,按集号去重,识别出 ≥2 个不同集号(或页面自报 totalEpisodes)才认定全集页,塞进 `resources`(synthetic 项)。
+
+- `scanEpisodeRange()`(「获取全集」按钮)
+  - 三级回落:① `extractFromPageHtml` 扒页面秒出 → ② `deriveEpisodeTemplate` 文件名规律外推 → ③ `autoAdvanceScan` 逐集巡航播放抓取。
+
+- `downloadEpisodeRange()` / `downloadListedEpisodes()` / `mergeEpisodeToDir()`
+  - 「下载全集」:把列表里已整理的整集逐集调 `mergeMp4` 合成到目录。synthetic 项也走这条,无需特判。
 
 ## `renderer/index.html` 关键区域
 

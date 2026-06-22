@@ -165,3 +165,26 @@ GitHub Release 必须包含:
 - 发布自动更新
 
 可以先本地修改、打包验证、展示 diff,等用户确认再发。
+
+## 9. 视频抓取:开放站抓不到/抓得慢
+
+### 现象
+
+像 my-drama.com 这类站,不先在内置浏览器里把视频播一段,「获取全集」要么抓不到、要么逐集巡航很慢。
+
+### 原因
+
+旧「获取全集」只有两条路:① 已嗅探到带集号 m3u8 后按文件名规律外推(要先播放);② 逐集导航播放抓取(慢且脆)。而这类开放站其实把**整部剧全部 m3u8 + `totalEpisodes` 明文写在页面 HTML 里**(Next.js RSC 数据块),CDN 公开无 token——根本不用播放。
+
+### 修复原则
+
+- 「获取全集」最优先尝试**扒页面 HTML 抠全集**(`extractFromPageHtml` → 主进程 `extract-page-media`),抠到秒出全集。
+- 抠不到(识别出的不同集号 < 2)就**无缝回落**到旧的模板外推 / 逐集巡航,不破坏 DramaShorts 等受保护站。
+- 地址路径可能含字面量 `'`、`(`、`)`(如 `.../CEO's%20...%20(V1)/...`),抠地址的正则**只能**以双引号/空白/反斜杠/尖括号为界,不能排除这些字符,否则 URL 会被截断。
+- 集号解析统一用渲染层 `extractResourceEpisodeNo`,不要在主进程另写一套。
+- 仅对**免费/公开或用户已合法登录**的内容使用;带 token/签名鉴权、付费墙后的内容不在此路径覆盖范围。
+
+相关函数:
+
+- `extractFromPageHtml()`、`scanEpisodeRange()`(renderer)
+- `extract-page-media` handler、`fetchPageHtml`、`extractPageMediaFromHtml`(main.js)

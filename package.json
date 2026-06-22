@@ -1,6 +1,6 @@
 {
     "name": "novel-rewrite-desktop",
-    "version": "0.1.10",
+    "version": "0.1.53",
     "description": "改文 · 小说去AI味 桌面客户端（Electron）",
     "main": "main.js",
     "author": "",
@@ -27,6 +27,9 @@
             "main.js",
             "renderer/**/*",
             "package.json"
+        ],
+        "asarUnpack": [
+            "node_modules/ffmpeg-static/**/*"
         ],
         "win": {
             "target": [
@@ -60,7 +63,9 @@
         "artifactName": "novel-rewrite-desktop-setup-${version}.${ext}"
     },
     "dependencies": {
-        "electron-updater": "^6.8.3"
+        "electron-updater": "^6.8.3",
+        "ffmpeg-static": "^5.3.0",
+        "xlsx": "^0.18.5"
     },
     "repository": {
         "type": "git",

@@ -1,0 +1,4452 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>改文 · 视频抓取</title>
+<style>
+  /* 样式保持不变（与上一版完全相同，为节省篇幅省略） */
+  :root {
+    --paper: #f4efe4;
+    --paper-deep: #ebe2d1;
+    --paper-soft: #fbf7eb;
+    --ink: #211b16;
+    --ink-soft: #5e5146;
+    --ink-faint: #9d8f82;
+    --rule: #d8cbb6;
+    --vermillion: #a93434;
+    --vermillion-d: #8f2929;
+    --ok: #168b52;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 14px/1.5 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  }
+  button, input { font: inherit; }
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-width: 980px;
+  }
+  .topbar {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto auto auto;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--rule);
+    background: rgba(244, 239, 228, .96);
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .brand-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    background: var(--vermillion);
+    color: #fff8ec;
+    font-weight: 800;
+  }
+  .address {
+    width: 100%;
+    height: 36px;
+    border: 1px solid var(--rule);
+    background: var(--paper-soft);
+    color: var(--ink);
+    padding: 0 12px;
+    outline: none;
+  }
+  .address:focus { border-color: var(--vermillion); }
+  .btn {
+    height: 36px;
+    min-width: 42px;
+    border: 1px solid var(--rule);
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    cursor: pointer;
+    padding: 0 12px;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--paper-deep); color: var(--ink); }
+  .btn.primary {
+    min-width: 72px;
+    background: var(--vermillion);
+    color: #fff8ec;
+    border-color: var(--vermillion);
+    font-weight: 700;
+  }
+  .btn.primary:hover { background: var(--vermillion-d); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .main {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(520px, 1fr) 420px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .browser-shell {
+    min-width: 0;
+    min-height: 0;
+    border-right: 1px solid var(--rule);
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  .browser-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule);
+    background: #f0e8da;
+    min-height: 41px;
+  }
+  .page-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-soft);
+  }
+  .loading-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    flex: 0 0 auto;
+  }
+  .loading .loading-dot { background: var(--ok); }
+  .browser-slot {
+    min-height: 0;
+    position: relative;
+    background:
+      linear-gradient(135deg, rgba(255,255,255,.25), rgba(255,255,255,0)),
+      var(--paper-soft);
+  }
+  .browser-placeholder {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--ink-faint);
+    pointer-events: none;
+  }
+  .capture {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f8f2e7;
+  }
+  .capture-head {
+    display: grid;
+    grid-template-rows: auto auto;
+    gap: 8px;
+    padding: 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .capture-meta {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .capture-title {
+    font-weight: 700;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .count {
+    min-width: 0;
+    margin-left: auto;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    color: var(--ink-faint);
+    font-size: 12px;
+    text-align: right;
+    white-space: normal;
+  }
+  /* —— 主操作：四个动词按钮，两行两列 —— */
+  .primary-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .primary-actions .btn { width: 100%; min-width: 0; padding: 0 8px; }
+
+  /* —— 常驻次要操作：导入 / 重试 / 清空（不收进抽屉，方便随手点）—— */
+  .secondary-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .secondary-actions .btn { width: 100%; min-width: 0; padding: 0 8px; }
+
+  .auto-mode-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 34px;
+    margin-top: 8px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    background: rgba(255, 255, 255, .24);
+    font-size: 14px;
+  }
+  .auto-mode-row input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--red);
+  }
+  .auto-mode-note {
+    min-width: 0;
+    color: var(--ink-faint);
+    font-size: 12px;
+    text-align: right;
+  }
+  .skip-notice-stack {
+    position: fixed;
+    right: 16px;
+    bottom: 42px;
+    z-index: 50;
+    display: grid;
+    gap: 10px;
+    width: min(420px, calc(100vw - 32px));
+    pointer-events: none;
+  }
+  .skip-notice {
+    pointer-events: auto;
+    border: 1px solid var(--vermillion);
+    background: #fff7e8;
+    box-shadow: 0 10px 30px rgba(33, 27, 22, .18);
+    padding: 12px;
+    color: var(--ink);
+  }
+  .skip-notice-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .skip-notice-close {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--rule);
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .skip-notice-body {
+    color: var(--ink-soft);
+    font-size: 13px;
+    word-break: break-all;
+  }
+
+  /* —— 保存目录行 —— */
+  .dir-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 10px 12px;
+  }
+  .dir-row .btn { min-width: 0; padding: 0 12px; }
+  .analysis-dir-row { grid-template-columns: minmax(0, 1fr) auto auto; padding-top: 0; }
+
+  /* —— 导出解析合集行 —— */
+  .export-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px;
+    padding: 0 12px 10px;
+  }
+  .export-row .btn { min-width: 0; padding: 0 14px; white-space: nowrap; }
+  .export-row select.download-path {
+    height: 32px;
+    cursor: pointer;
+    appearance: auto;
+  }
+
+  /* —— 折叠抽屉（与下方“直连设置”同款卡片）—— */
+  .drawer {
+    margin: 0 12px 8px;
+    border: 1px solid #e3dbca;
+    border-radius: 8px;
+    background: #fbf8f0;
+  }
+  .drawer > summary {
+    cursor: pointer;
+    padding: 9px 12px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .drawer > summary::-webkit-details-marker { display: none; }
+  .drawer > summary::before {
+    content: '▸';
+    font-size: 11px;
+    color: var(--ink-faint);
+    transition: transform .15s ease;
+  }
+  .drawer[open] > summary::before { transform: rotate(90deg); }
+  .drawer[open] > summary { border-bottom: 1px solid #ece3cf; }
+  .drawer-body {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn-row .btn { flex: 1 1 auto; min-width: 72px; }
+  .input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+  .input-row .btn { min-width: 0; padding: 0 12px; white-space: nowrap; }
+
+  .download-path {
+    min-width: 0;
+    height: 32px;
+    border: 1px solid var(--rule);
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    padding: 0 9px;
+    outline: none;
+  }
+  .download-path:focus { border-color: var(--vermillion); }
+
+  /* —— 运行日志（抓取/下载 + 解析，收进一个抽屉）—— */
+  .logs { gap: 12px; }
+  .log-block { display: flex; flex-direction: column; gap: 5px; }
+  .log-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-faint);
+  }
+  .task-log, .analysis-log {
+    max-height: 110px;
+    overflow: auto;
+    padding: 7px 9px;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, .45);
+    font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+  }
+  .task-log { color: var(--ink-faint); }
+  .analysis-log { color: var(--ink-soft); }
+  .analysis-hint {
+    color: var(--ink-faint);
+    font-size: 12px;
+  }
+  .filters {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule);
+    overflow-x: auto;
+  }
+  .filter {
+    border: 1px solid var(--rule);
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .filter.active {
+    background: var(--ink-soft);
+    color: #fff8ec;
+    border-color: var(--ink-soft);
+  }
+  .list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px 10px 14px;
+  }
+  .empty {
+    margin: 28px 10px;
+    color: var(--ink-faint);
+    text-align: center;
+  }
+  .item {
+    border-bottom: 1px solid var(--rule);
+    padding: 10px 2px 12px;
+  }
+  .episode {
+    background: rgba(255, 255, 255, .22);
+    border: 1px solid var(--rule);
+    margin: 0 0 10px;
+    padding: 10px 10px 12px;
+  }
+  .episode .badge {
+    min-width: 58px;
+    background: var(--vermillion);
+    color: #fff8ec;
+  }
+  .episode .name {
+    font-size: 15px;
+  }
+  .episode-note {
+    margin-top: 6px;
+    color: var(--ink-faint);
+    font-size: 12px;
+  }
+  .item:last-child { border-bottom: none; }
+  .item-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .badge {
+    min-width: 44px;
+    text-align: center;
+    padding: 2px 6px;
+    background: var(--paper-deep);
+    color: var(--vermillion);
+    font: 700 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
+    text-transform: uppercase;
+  }
+  .name {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 700;
+  }
+  .meta {
+    margin-top: 4px;
+    color: var(--ink-faint);
+    font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  }
+  .url {
+    margin-top: 5px;
+    color: var(--ink-soft);
+    font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace;
+    word-break: break-all;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .action {
+    border: 1px solid var(--rule);
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .action:hover { background: var(--paper-deep); color: var(--ink); }
+  .status {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    color: var(--ink-faint);
+    font-size: 12px;
+    background: #e8dfcf;
+  }
+  .status-ok { color: var(--ok); }
+  .status-error { color: var(--vermillion); }
+</style>
+<style>
+  .evolink-config { margin: 0 12px 8px; border: 1px solid #e3dbca; border-radius: 8px; background: #fbf8f0; }
+  .evolink-config > summary { cursor: pointer; padding: 8px 12px; font-size: 13px; color: #7a6f57; user-select: none; list-style: none; }
+  .evolink-config > summary::-webkit-details-marker { display: none; }
+  .evolink-config > summary::before { content: '⚙ '; }
+  .evolink-config[open] > summary { border-bottom: 1px solid #ece3cf; }
+  .evolink-fields { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .evolink-fields textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 70px; padding: 8px 10px; border: 1px solid #d9cfb8; border-radius: 6px; font: inherit; background: #fff; }
+  .evolink-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .evolink-status { font-size: 12px; color: #8a7f66; }
+  .evolink-status.ok { color: #2e7d32; }
+  .evolink-route { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e8deca; border-radius: 6px; background: #fffaf0; font-size: 13px; color: #6f6049; }
+  .evolink-route input { width: 16px; height: 16px; accent-color: var(--vermillion); }
+  .evolink-route strong { color: var(--ink); }
+  .evolink-route em { margin-left: auto; font-style: normal; color: #9a8d73; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <form class="topbar" id="navForm">
+    <button class="btn" id="backToAppBtn" type="button" title="返回改文主界面">← 返回</button>
+    <div class="brand"><span class="brand-mark">抓</span><span>视频抓取</span></div>
+    <input class="address" id="addressInput" autocomplete="off" spellcheck="false" placeholder="输入网址" />
+    <button class="btn" id="backBtn" type="button" title="后退">←</button>
+    <button class="btn" id="forwardBtn" type="button" title="前进">→</button>
+    <button class="btn" id="reloadBtn" type="button" title="刷新">↻</button>
+    <button class="btn primary" type="submit">访问</button>
+  </form>
+
+  <main class="main">
+    <section class="browser-shell" id="browserShell">
+      <div class="browser-head" id="browserHead">
+        <span class="loading-dot"></span>
+        <span class="page-title" id="pageTitle">about:blank</span>
+      </div>
+      <div class="browser-slot" id="browserSlot">
+        <div class="browser-placeholder">浏览器区域</div>
+      </div>
+    </section>
+
+    <aside class="capture">
+      <div class="capture-head">
+        <div class="capture-meta">
+          <div class="capture-title">整集资源</div>
+          <div class="count" id="resourceCount">0 条</div>
+        </div>
+        <div class="primary-actions">
+          <button class="btn primary" id="scanAllBtn" type="button">获取全集</button>
+          <button class="btn primary" id="downloadAllBtn" type="button">下载全集</button>
+          <button class="btn primary" id="analyzeVideosBtn" type="button">解析视频</button>
+          <button class="btn" id="stopAnalysisBtn" type="button" disabled>停止解析</button>
+        </div>
+        <div class="secondary-actions">
+          <button class="btn" id="importLinksBtn" type="button">导入文件</button>
+          <button class="btn" id="retryFailedBtn" type="button" disabled>重试失败</button>
+          <button class="btn" id="clearBtn" type="button">清空</button>
+        </div>
+        <label class="auto-mode-row" title="关闭后，自动解析和手动解析都会被拦截，不会调用任何视频解析模型">
+          <span><input id="analysisEnabledInput" type="checkbox" checked /> 启用解析</span>
+          <span class="auto-mode-note">关闭后不调用视频解析模型</span>
+        </label>
+        <label class="auto-mode-row" title="开启后，每部剧下载完成会自动在后台并发解析，不等待解析完成就继续下一部">
+          <span><input id="autoAnalyzeModeInput" type="checkbox" checked /> 自动模式</span>
+          <span class="auto-mode-note">下载完本剧后自动解析</span>
+        </label>
+      </div>
+
+  <div class="dir-row">
+    <input class="download-path" id="downloadDirInput" placeholder="保存目录（按剧名自动建子文件夹）" />
+    <button class="btn" id="chooseDirBtn" type="button">选目录</button>
+  </div>
+
+  <div class="dir-row analysis-dir-row">
+    <input class="download-path" id="analysisDirInput" placeholder="解析目录（选择已有视频文件夹，可手动修改）" />
+    <button class="btn" id="chooseAnalysisDirBtn" type="button">解析目录</button>
+    <button class="btn" id="chooseAnalysisFilesBtn" type="button">选视频</button>
+  </div>
+
+  <div class="export-row">
+        <select class="download-path" id="exportFormatSelect" title="选择导出格式">
+          <option value="docx">Word（.docx）</option>
+          <option value="xlsx">Excel（.xlsx）</option>
+          <option value="txt">纯文本（.txt）</option>
+          <option value="md">Markdown（.md）</option>
+          <option value="csv">CSV（.csv）</option>
+          <option value="html">网页（.html）</option>
+          <option value="json">JSON（.json）</option>
+        </select>
+        <button class="btn" id="retryMissingAnalysisBtn" type="button">补漏解析</button>
+        <button class="btn primary" id="exportAnalysesBtn" type="button">导出解析</button>
+      </div>
+
+      <details class="drawer" id="toolsDrawer">
+        <summary>高级 · 自定义请求头 / 手动 m3u8 下载</summary>
+        <div class="drawer-body">
+          <div class="input-row">
+            <input class="download-path" id="customHeadersInput" placeholder="可选：粘贴 Cookie 或 Authorization（例如：Cookie: session=xxx）" />
+            <button class="btn" id="setHeadersBtn" type="button">应用请求头</button>
+          </div>
+          <div class="input-row">
+            <input class="download-path" id="manualM3u8Input" placeholder="手动粘贴付费集的 m3u8 链接（可从浏览器开发者工具获取）" />
+            <button class="btn primary" id="manualDownloadBtn" type="button">下载该集</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="evolink-config" id="evolinkConfig">
+        <summary>解析路线设置（直连 EvoLink / 后端模型）</summary>
+        <div class="evolink-fields">
+          <label class="evolink-route" title="打开后使用本机填写的 EvoLink Key 直连解析；关闭后统一走后端模型">
+            <input id="evolinkDirectModeInput" type="checkbox" />
+            <strong>直连模式</strong>
+            <em>打开=直连，关闭=后端</em>
+          </label>
+          <input class="download-path" id="evolinkKeyInput" type="text" autocomplete="off" spellcheck="false" placeholder="EvoLink API Key（sk-...）" />
+          <textarea id="evolinkPromptInput" placeholder="视频解析系统提示词（直连时由本地发出；留空则不带提示词）"></textarea>
+          <input class="download-path" id="evolinkModelInput" type="text" autocomplete="off" spellcheck="false" placeholder="模型名（留空默认 gemini-3-pro-preview）" />
+          <div class="evolink-actions">
+            <button class="btn primary" id="evolinkSaveBtn" type="button">保存</button>
+            <button class="btn" id="evolinkClearBtn" type="button">清除（切回后端）</button>
+            <span class="evolink-status" id="evolinkStatus"></span>
+          </div>
+        </div>
+      </details>
+
+      <details class="drawer" id="logDrawer" open>
+        <summary>运行日志</summary>
+        <div class="drawer-body logs">
+          <div class="log-block">
+            <div class="log-label">抓取 / 下载</div>
+            <div class="task-log" id="taskLog">等待任务</div>
+          </div>
+          <div class="log-block">
+            <div class="log-label">视频解析</div>
+            <div class="analysis-hint" id="analysisHint">解析会读取当前本剧文件夹里的 MP4</div>
+            <div class="analysis-log" id="analysisLog">单集解析会写入内部缓存，最终导出为整部剧合集文档。</div>
+          </div>
+        </div>
+      </details>
+
+      <div class="filters">
+        <button class="filter active" type="button" data-filter="episode">整集</button>
+        <button class="filter" type="button" data-filter="all">全部</button>
+        <button class="filter" type="button" data-filter="m3u8">m3u8</button>
+        <button class="filter" type="button" data-filter="mpd">mpd</button>
+        <button class="filter" type="button" data-filter="video">视频</button>
+        <button class="filter" type="button" data-filter="audio">音频</button>
+      </div>
+      <div class="list" id="resourceList">
+        <div class="empty">打开网页后，会自动把视频整理成整集显示</div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="status" id="statusBar">
+    <span class="status-ok">●</span>
+    <span id="statusText">就绪</span>
+  </footer>
+  <div class="skip-notice-stack" id="skipNoticeStack"></div>
+</div>
+
+<script>
+(() => {
+  console.log('%c[视频抓取] 布局 v4 已加载 · 顶部三按钮 + 导出解析合集(txt/md/html/csv/json/xlsx/docx)', 'color:#a93434;font-weight:700');
+  const api = window.videoSniffer;
+  const $ = (id) => document.getElementById(id);
+  const API_SERVER = 'https://mj.api.meidawenhua.com';
+  const VIDEO_ANALYSIS_MODEL_ID = '73';
+  const EVOLINK_DIRECT_MODE_KEY = 'evolink_direct_mode';
+  const resources = new Map();
+  const episodeGroups = new Map();
+  let activeFilter = 'episode';
+  let lastState = {};
+  let scanAbort = false;
+  let scanRunning = false;
+  let loadingWaiters = [];
+  let stopWaiters = [];
+  const DOWNLOAD_DIR_KEY = 'gaiwen-video-download-dir';
+  const ANALYSIS_DIR_KEY = 'gaiwen-video-analysis-dir';
+  const ANALYSIS_ENABLED_KEY = 'gaiwen-video-analysis-enabled';
+  const AUTO_ANALYZE_KEY = 'gaiwen-video-auto-analyze';
+  const FAILED_BATCH_KEY = 'gaiwen-video-failed-batch-items';
+  const SKIP_NOTICE_KEY = 'gaiwen-video-skip-notices';
+  const NO_VIDEO_SKIP_REASON = '连续 3 次切集/播放都没有抓到视频内容，已跳过这条链接';
+  const AUTO_ANALYZE_CONCURRENCY = 3;
+  const MANUAL_ANALYZE_CONCURRENCY = 3;
+  const VIDEO_ANALYZE_MAX_RETRIES = 3;
+  const VIDEO_ANALYZE_RETRY_DELAY_MS = 5000;
+  const EPISODE_CAPTURE_TIMEOUT_MS = 45000;
+  const QUICK_PROBE_CAPTURE_TIMEOUT_MS = 18000;
+  const VERIFICATION_WAIT_TIMEOUT_MS = 300000;
+  // —— 两段式抓取：先快速播几秒抓，抓不到再延长等待 ——
+  // 第一段：每集打开后只等页面就绪约 3 秒、再快速播放约 8 秒，抓到整集资源就立刻收手切下一集
+  const QUICK_PAGE_IDLE_MS = 3000;        // 想更稳可调到 4000~5000
+  const QUICK_CAPTURE_TIMEOUT_MS = 8000;  // “前几秒”窗口，想更快可调到 5000，漏抓多就调到 12000
+  // 第二段：第一段没抓到时才进入，延长播放继续等（默认沿用原来的 45 秒上限）
+  const EXTENDED_CAPTURE_TIMEOUT_MS = EPISODE_CAPTURE_TIMEOUT_MS;
+  // 兼容历史“快速模式”分支（isFastScanEnabled 当前恒为 false，这几个值不会真正生效，仅防止开启时报未定义）
+  const FAST_EPISODE_CAPTURE_TIMEOUT_MS = QUICK_CAPTURE_TIMEOUT_MS;
+  const FAST_PAGE_IDLE_MS = QUICK_PAGE_IDLE_MS;
+  const FAST_NO_URL_PAGE_IDLE_MS = QUICK_PAGE_IDLE_MS;
+  const DURATION_TOLERANCE_SEC = 0.75;
+  let downloadDir = localStorage.getItem(DOWNLOAD_DIR_KEY) || '';
+  let analysisDir = localStorage.getItem(ANALYSIS_DIR_KEY) || '';
+  let analysisEnabled = localStorage.getItem(ANALYSIS_ENABLED_KEY) !== '0';
+  let autoAnalyzeMode = localStorage.getItem(AUTO_ANALYZE_KEY) !== '0';
+  let importedLinks = [];
+  let importedFilePath = '';
+  let failedBatchItems = loadStoredArray(FAILED_BATCH_KEY);
+  let skipNotices = loadStoredArray(SKIP_NOTICE_KEY);
+  let lastBatchRootDir = '';
+  let lastBatchMaxEpisodes = 200;
+  let activeBatchFolderStamp = '';
+  let activeLinkFolderMap = new Map();
+  let activeLinkFolderPaths = new Set();
+  let activeSeriesTitle = '';
+  let activeLinkDownloadDir = '';
+  let activeDownloadedEpisodes = new Set();
+  let activeSourceInfo = null;
+  const mergeWaiters = new Map();
+  let activeScanEpisodeNo = 0;
+  let activeScanToken = '';
+  const downloadingEpisodes = new Set();
+  const backgroundJobs = new Map();
+  let backgroundPromises = [];
+  let firstEpisodeRetryPromise = null;
+  let customHeaders = {};
+  let analysisRunning = false;
+  let analysisAbort = false;
+  let analysisSelectedFiles = [];
+  const autoAnalysisJobs = new Map();
+  let autoAnalysisQueue = Promise.resolve();
+  let inputModalOpen = false;
+
+  function setStatus(text, type) {
+    const dot = $('statusBar').querySelector('span');
+    dot.className = type === 'error' ? 'status-error' : 'status-ok';
+    $('statusText').textContent = text;
+  }
+
+  function logTask(text, mode) {
+    const el = $('taskLog');
+    if (!el) return;
+    const ld = $('logDrawer'); if (ld && !ld.open) ld.open = true;
+    const line = `[${new Date().toLocaleTimeString()}] ${text}`;
+    el.textContent = mode === 'replace' ? line : (el.textContent === '等待任务' ? line : `${el.textContent}\n${line}`);
+    el.scrollTop = el.scrollHeight;
+    setStatus(text);
+  }
+
+  function logAnalysis(text, mode) {
+    const el = $('analysisLog');
+    if (!el) return;
+    const ld = $('logDrawer'); if (ld && !ld.open) ld.open = true;
+    const line = `[${new Date().toLocaleTimeString()}] ${text}`;
+    el.textContent = mode === 'replace'
+      ? line
+      : (el.textContent === '单集解析会写入内部缓存，最终导出为整部剧合集文档。' ? line : `${el.textContent}\n${line}`);
+    el.scrollTop = el.scrollHeight;
+    setStatus(text);
+  }
+
+  function loadStoredArray(key) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || '[]');
+      return Array.isArray(value) ? value : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveStoredArray(key, value, limit) {
+    try {
+      const list = Array.isArray(value) ? value.slice(-(limit || 80)) : [];
+      localStorage.setItem(key, JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  function saveBatchFailures() {
+    saveStoredArray(FAILED_BATCH_KEY, failedBatchItems, 120);
+  }
+
+  function saveSkipNotices() {
+    saveStoredArray(SKIP_NOTICE_KEY, skipNotices, 40);
+  }
+
+  function isNoVideoReason(reason) {
+    return /没有抓到视频内容|没有视频内容|无视频内容|NO_VIDEO/i.test(String(reason || ''));
+  }
+
+  function renderSkipNotices() {
+    const stack = $('skipNoticeStack');
+    if (!stack) return;
+    stack.innerHTML = '';
+    skipNotices.slice(-5).reverse().forEach((notice) => {
+      const node = document.createElement('div');
+      node.className = 'skip-notice';
+      node.dataset.id = notice.id;
+
+      const head = document.createElement('div');
+      head.className = 'skip-notice-head';
+      const title = document.createElement('div');
+      title.textContent = '已跳过无视频链接';
+      const close = document.createElement('button');
+      close.className = 'skip-notice-close';
+      close.type = 'button';
+      close.textContent = '×';
+      close.title = '关闭这条提醒';
+      head.append(title, close);
+
+      const body = document.createElement('div');
+      body.className = 'skip-notice-body';
+      const name = notice.title || '未命名剧';
+      const reason = notice.reason || NO_VIDEO_SKIP_REASON;
+      body.textContent = `${name}：${reason}。链接：${notice.url || ''}`;
+
+      close.addEventListener('click', () => {
+        skipNotices = skipNotices.filter(item => item.id !== notice.id);
+        saveSkipNotices();
+        renderSkipNotices();
+      });
+
+      node.append(head, body);
+      stack.append(node);
+    });
+  }
+
+  function pushSkipNotice(item, reason) {
+    if (!item || !item.url) return;
+    const url = item.url;
+    const existing = skipNotices.find(notice => notice.url === url);
+    const data = {
+      id: existing ? existing.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      url,
+      title: item.title || titleFromUrl(url) || '未命名剧',
+      reason: reason || NO_VIDEO_SKIP_REASON,
+      createdAt: existing ? existing.createdAt : Date.now(),
+      updatedAt: Date.now(),
+    };
+    if (existing) {
+      Object.assign(existing, data);
+    } else {
+      skipNotices.push(data);
+    }
+    saveSkipNotices();
+    renderSkipNotices();
+  }
+
+  function updateAnalysisUi(running) {
+    analysisRunning = !!running;
+    const enabled = isAnalysisEnabled();
+    const analyzeBtn = $('analyzeVideosBtn');
+    const stopBtn = $('stopAnalysisBtn');
+    const chooseFilesBtn = $('chooseAnalysisFilesBtn');
+    const retryMissingBtn = $('retryMissingAnalysisBtn');
+    const autoAnalyzeInput = $('autoAnalyzeModeInput');
+    if (analyzeBtn) {
+      analyzeBtn.disabled = !enabled || analysisRunning;
+      analyzeBtn.textContent = analysisRunning ? '解析中' : (enabled ? '解析视频' : '解析已关');
+    }
+    if (stopBtn) stopBtn.disabled = !analysisRunning;
+    if (chooseFilesBtn) chooseFilesBtn.disabled = analysisRunning;
+    if (retryMissingBtn) retryMissingBtn.disabled = !enabled || analysisRunning;
+    if (autoAnalyzeInput) autoAnalyzeInput.disabled = !enabled;
+    const hint = $('analysisHint');
+    if (hint) {
+      if (!enabled) {
+        hint.textContent = '视频解析已关闭：下载和抓取照常进行，不会调用解析模型';
+      } else if (analysisSelectedFiles.length) {
+        hint.textContent = `将解析已选中的 ${analysisSelectedFiles.length} 个视频`;
+      } else if (analysisDir) {
+        hint.textContent = '将解析指定目录里的 MP4：' + analysisDir;
+      } else if (activeLinkDownloadDir) {
+        hint.textContent = '将解析当前本剧文件夹里的 MP4';
+      } else {
+        hint.textContent = '将解析总目录里的 MP4';
+      }
+    }
+  }
+
+  function setAnalysisSelectedFiles(files) {
+    analysisSelectedFiles = Array.isArray(files) ? files.slice() : [];
+    updateAnalysisUi(analysisRunning);
+  }
+
+  function clearAnalysisSelectedFiles() {
+    if (!analysisSelectedFiles.length) return;
+    analysisSelectedFiles = [];
+    updateAnalysisUi(analysisRunning);
+  }
+
+  async function authToken() {
+    const localToken = localStorage.getItem('nr_token') || '';
+    if (localToken) return localToken;
+    if (api && api.getAuth) {
+      try {
+        const res = await api.getAuth();
+        if (res && res.token) {
+          localStorage.setItem('nr_token', res.token);
+          return res.token;
+        }
+      } catch (e) {}
+    }
+    return '';
+  }
+
+  async function analysisRootDir() {
+    syncAnalysisDirFromInput();
+    syncDownloadDirFromInput();
+    if (analysisDir) return analysisDir;
+    if (activeLinkDownloadDir) return activeLinkDownloadDir;
+    if (downloadDir) return downloadDir;
+    return await ensureDownloadDir();
+  }
+
+  function folderNameOfPath(dir) {
+    const parts = String(dir || '').split(/[\\\/]+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : '';
+  }
+
+  function episodeLabelOfVideo(file, index) {
+    const ep = Number(file && file.episodeNo) || 0;
+    return ep ? `第 ${ep} 集` : `第 ${index + 1} 个视频`;
+  }
+
+  function isEvolinkDirectEnabled() {
+    const el = $('evolinkDirectModeInput');
+    if (el) return !!el.checked;
+    return localStorage.getItem(EVOLINK_DIRECT_MODE_KEY) === '1';
+  }
+
+  async function readVideoAnalysisConfig() {
+    const token = await authToken();
+    // 直连配置：优先读面板输入框的当前内容，框里没填再回退到 localStorage。
+    const keyEl = $('evolinkKeyInput');
+    const promptEl = $('evolinkPromptInput');
+    const modelEl = $('evolinkModelInput');
+    const directEnabled = isEvolinkDirectEnabled();
+    const evolinkKey = (((keyEl && keyEl.value) || localStorage.getItem('evolink_key') || '')).trim();
+    const evolinkPrompt = ((promptEl && promptEl.value) || localStorage.getItem('evolink_video_prompt') || '');
+    const evolinkModel = (((modelEl && modelEl.value) || localStorage.getItem('evolink_model') || '')).trim();
+    try {
+      if (evolinkKey) localStorage.setItem('evolink_key', evolinkKey);
+      localStorage.setItem('evolink_video_prompt', evolinkPrompt || '');
+      if (evolinkModel) localStorage.setItem('evolink_model', evolinkModel);
+    } catch (e) {}
+    if (!directEnabled) {
+      return { token, route: 'backend', evolinkDirectEnabled: false, evolinkKey: '', evolinkPrompt, evolinkModel: '' };
+    }
+    return { token, route: 'direct', evolinkDirectEnabled: true, evolinkKey, evolinkPrompt, evolinkModel };
+  }
+
+  function analysisRouteText(config) {
+    if (config && config.evolinkDirectEnabled && !config.evolinkKey) return '直连 EvoLink（缺少 Key）';
+    return config && config.evolinkKey
+      ? '直连 Gemini（' + (config.evolinkModel || 'gemini-3-pro-preview') + '）'
+      : '后端模型 ' + VIDEO_ANALYSIS_MODEL_ID;
+  }
+
+  function analysisRetryDelay(attempt) {
+    return VIDEO_ANALYZE_RETRY_DELAY_MS * Math.max(1, Number(attempt) || 1);
+  }
+
+  function isAnalysisAbortMessage(message) {
+    return /(停止|取消|abort|aborted|AbortError)/i.test(String(message || ''));
+  }
+
+  function waitAnalysisRetry(ms) {
+    return new Promise(resolve => {
+      if (analysisAbort) { resolve(); return; }
+      setTimeout(resolve, Math.max(0, Number(ms) || 0));
+    });
+  }
+
+  async function analyzeVideoFileWithRetry(file, index, total, config, options) {
+    const opts = options || {};
+    const label = episodeLabelOfVideo(file, index);
+    const routeText = config.evolinkKey ? '直连解析' : '后端解析视频';
+    const prefix = opts.prefix ? `${opts.prefix} · ` : '';
+    let lastError = '';
+    const maxAttempts = VIDEO_ANALYZE_MAX_RETRIES + 1;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (analysisAbort) return { ok: false, aborted: true, error: '已停止解析' };
+      const retryNo = attempt - 1;
+      const retryText = retryNo > 0 ? ` · 第 ${retryNo}/${VIDEO_ANALYZE_MAX_RETRIES} 次重试` : '';
+      logAnalysis(`${prefix}${label} · ${index + 1}/${total} · ${routeText}${retryText}：${file.name}`);
+      try {
+        const result = await api.analyzeVideoFile({
+          server: API_SERVER,
+          token: config.token,
+          modelId: VIDEO_ANALYSIS_MODEL_ID,
+          filePath: file.path,
+          episodeNo: file.episodeNo,
+          content: `${label} 视频解析。请直接按系统提示词解析该视频。文件名：${file.name}`,
+          evolinkKey: config.evolinkKey,
+          evolinkPrompt: config.evolinkPrompt,
+          evolinkModel: config.evolinkModel,
+        });
+        if (analysisAbort) return { ok: false, aborted: true, error: '已停止解析' };
+        if (result && result.ok) {
+          logAnalysis(`${prefix}${label} 解析完成，已写入内部缓存`);
+          return { ok: true, result };
+        }
+        lastError = result && result.error ? result.error : '未知错误';
+      } catch (err) {
+        lastError = err && err.message ? err.message : String(err);
+      }
+      if (isAnalysisAbortMessage(lastError) || analysisAbort) {
+        return { ok: false, aborted: true, error: lastError || '已停止解析' };
+      }
+      if (attempt < maxAttempts) {
+        const waitMs = analysisRetryDelay(attempt);
+        logAnalysis(`${prefix}${label} 解析失败：${lastError}；${Math.round(waitMs / 1000)} 秒后自动重试`);
+        await waitAnalysisRetry(waitMs);
+      }
+    }
+    logAnalysis(`${prefix}${label} 解析最终失败：${lastError || '未知错误'}（已自动重试 ${VIDEO_ANALYZE_MAX_RETRIES} 次）`);
+    return { ok: false, error: lastError || '未知错误' };
+  }
+
+  function selectedExportFormat() {
+    const sel = $('exportFormatSelect');
+    return (sel && sel.value) || 'docx';
+  }
+
+  function isAutoAnalyzeEnabled() {
+    const el = $('autoAnalyzeModeInput');
+    return isAnalysisEnabled() && (el ? !!el.checked : autoAnalyzeMode);
+  }
+
+  function isAnalysisEnabled() {
+    const el = $('analysisEnabledInput');
+    return el ? !!el.checked : analysisEnabled;
+  }
+
+  function initAnalysisEnabledMode() {
+    const el = $('analysisEnabledInput');
+    if (!el) return;
+    el.checked = analysisEnabled;
+    el.addEventListener('change', async () => {
+      analysisEnabled = !!el.checked;
+      localStorage.setItem(ANALYSIS_ENABLED_KEY, analysisEnabled ? '1' : '0');
+      if (!analysisEnabled && analysisRunning) {
+        analysisAbort = true;
+        if (api && api.cancelVideoAnalysis) {
+          try { await api.cancelVideoAnalysis(); } catch (e) {}
+        }
+        logAnalysis('视频解析总开关已关闭，正在停止当前解析任务');
+      }
+      updateAnalysisUi(analysisRunning);
+      setStatus(analysisEnabled ? '视频解析已开启' : '视频解析已关闭：不会自动或手动解析视频');
+      if (!analysisEnabled) logAnalysis('视频解析已关闭：下载完成后不会自动解析，手动解析/补漏解析也不会调用模型');
+    });
+  }
+
+  function isFastScanEnabled(options) {
+    return false;
+  }
+
+  function initAutoAnalyzeMode() {
+    const el = $('autoAnalyzeModeInput');
+    if (!el) return;
+    el.checked = autoAnalyzeMode;
+    el.addEventListener('change', () => {
+      autoAnalyzeMode = !!el.checked;
+      localStorage.setItem(AUTO_ANALYZE_KEY, autoAnalyzeMode ? '1' : '0');
+      setStatus(autoAnalyzeMode ? '自动模式已开启：下载完本剧后后台解析' : '自动模式已关闭');
+    });
+  }
+
+  async function runWithConcurrency(items, limit, worker) {
+    let cursor = 0;
+    const count = Math.max(1, Math.min(Number(limit) || 1, items.length));
+    const workers = Array.from({ length: count }, async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        await worker(items[index], index);
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  function startAutoAnalyzeForDir(rootDir, label) {
+    if (!isAnalysisEnabled()) {
+      logAnalysis(`自动模式：${label || rootDir || '本剧'} 下载完成，但视频解析总开关已关闭，已跳过解析`);
+      return;
+    }
+    if (!isAutoAnalyzeEnabled() || !rootDir) return;
+    if (!api || !api.listVideoFiles || !api.analyzeVideoFile) {
+      logAnalysis('自动模式：当前安装包缺少视频解析接口，已跳过后台解析');
+      return;
+    }
+    if (autoAnalysisJobs.has(rootDir)) {
+      logAnalysis(`自动模式：${label || rootDir} 已在后台解析队列中，跳过重复任务`);
+      return;
+    }
+
+    const runJob = async () => {
+      const taskName = label || rootDir;
+      let ok = 0;
+      let failed = 0;
+      try {
+        const config = await readVideoAnalysisConfig();
+        if (config.evolinkDirectEnabled && !config.evolinkKey) {
+          logAnalysis(`自动模式：${taskName} 已开启直连模式，但没有填写 EvoLink Key，跳过解析`);
+          return;
+        }
+        if (!config.evolinkDirectEnabled && !config.token) {
+          logAnalysis(`自动模式：${taskName} 当前选择后端模型，但缺少登录 token，跳过解析`);
+          return;
+        }
+
+        logAnalysis(`自动模式：${taskName} 下载完成，后台解析开始 · ${analysisRouteText(config)} · 并发 ${AUTO_ANALYZE_CONCURRENCY}`);
+        const listed = await api.listVideoFiles(rootDir);
+        if (!listed || !listed.ok) {
+          throw new Error(listed && listed.error ? listed.error : '读取视频目录失败');
+        }
+        const files = Array.isArray(listed.files) ? listed.files : [];
+        if (!files.length) {
+          logAnalysis(`自动模式：${taskName} 目录里没有找到可解析视频，已跳过`);
+          return;
+        }
+
+        await runWithConcurrency(files, AUTO_ANALYZE_CONCURRENCY, async (file, index) => {
+          const result = await analyzeVideoFileWithRetry(file, index, files.length, config, {
+            prefix: `自动模式：${taskName}`,
+          });
+          if (result.ok) ok++;
+          else if (!result.aborted) failed++;
+        });
+
+        logAnalysis(`自动模式：${taskName} 后台解析完成 · 成功 ${ok} · 失败 ${failed}`);
+        if (ok > 0 && api.exportAnalyses) {
+          const format = selectedExportFormat();
+          logAnalysis(`自动模式：${taskName} 正在按集数顺序导出整部剧合集（${format}）`);
+          const exported = await api.exportAnalyses({
+            rootDir,
+            format,
+            title: taskName,
+            silent: true,
+          });
+          if (exported && exported.ok) {
+            logAnalysis(`自动模式：${taskName} 已导出 ${exported.count} 集合集：${exported.outputPath}（缓存目录里的 txt 是内部中间文件）`);
+          } else {
+            logAnalysis(`自动模式：${taskName} 合集导出失败：${exported && exported.error ? exported.error : '未知错误'}`);
+          }
+        }
+      } catch (err) {
+        logAnalysis(`自动模式：${taskName} 后台解析出错：${err && err.message ? err.message : err}`);
+      }
+    };
+
+    logAnalysis(`自动模式：${label || rootDir} 已加入后台解析队列`);
+    const job = autoAnalysisQueue.then(runJob, runJob).finally(() => {
+      autoAnalysisJobs.delete(rootDir);
+    });
+    autoAnalysisQueue = job.catch(() => {});
+
+    autoAnalysisJobs.set(rootDir, job);
+  }
+
+  async function analyzeSavedVideos(options) {
+    const opts = options || {};
+    if (analysisRunning) return;
+    if (!isAnalysisEnabled()) {
+      setStatus('视频解析已关闭，不会调用解析模型', 'error');
+      logAnalysis('视频解析总开关已关闭：本次手动解析/补漏解析已拦截，不会调用模型。', 'replace');
+      return;
+    }
+    if (!api || !api.listVideoFiles || !api.analyzeVideoFile) {
+      setStatus('当前安装包缺少视频解析接口，请重新打包安装', 'error');
+      return;
+    }
+    const config = await readVideoAnalysisConfig();
+    if (config.evolinkDirectEnabled && !config.evolinkKey) {
+      setStatus('已开启直连模式，请先填写并保存 EvoLink Key', 'error');
+      logAnalysis('已开启直连模式，但没有填写 EvoLink Key；请在「解析路线设置」里填 Key，或关闭直连模式走后端。', 'replace');
+      return;
+    }
+    if (!config.evolinkDirectEnabled && !config.token) {
+      setStatus('当前选择后端模型，请先在改文主界面登录', 'error');
+      logAnalysis('当前解析路线是【后端模型】，但未找到登录 token；请先登录主界面，或打开直连模式并填写 EvoLink Key。', 'replace');
+      return;
+    }
+    if (config.evolinkKey) {
+      logAnalysis('✔ 已开启直连模式，本次【直连 Gemini】（绕过后端）· 模型 ' + (config.evolinkModel || 'gemini-3-pro-preview'));
+    } else {
+      logAnalysis('本次走【后端模型 ' + VIDEO_ANALYSIS_MODEL_ID + '】解析视频（后端已支持直接读取视频文件）');
+    }
+    const rootDir = await analysisRootDir();
+    if (!rootDir) return;
+
+    analysisAbort = false;
+    updateAnalysisUi(true);
+    logAnalysis(`${opts.missingOnly ? '开始扫描缺失解析的视频' : '开始扫描视频目录'}：${rootDir}`, 'replace');
+
+    try {
+      let files = analysisSelectedFiles.length ? analysisSelectedFiles.slice() : [];
+      if (!files.length) {
+        const listed = await api.listVideoFiles(rootDir);
+        if (!listed || !listed.ok) {
+          throw new Error(listed && listed.error ? listed.error : '读取视频目录失败');
+        }
+        files = Array.isArray(listed.files) ? listed.files : [];
+      }
+      const totalFiles = files.length;
+      if (opts.missingOnly) {
+        files = files.filter(file => !file.analysisDone);
+      }
+      if (!files.length) {
+        if (opts.missingOnly && totalFiles > 0) {
+          logAnalysis(`没有发现缺失解析的集数：${totalFiles} 个视频都已有解析缓存，可以直接导出合集`);
+          setStatus('没有缺失解析，可直接导出合集');
+        } else {
+          logAnalysis('目录里没有找到 mp4/mov/webm/mkv 视频文件');
+          setStatus('没有找到可解析的视频', 'error');
+        }
+        return;
+      }
+
+      const scopeText = analysisSelectedFiles.length ? '已选视频' : '视频目录';
+      logAnalysis(`${scopeText}${opts.missingOnly ? `共 ${totalFiles} 个视频，发现 ${files.length} 个缺失解析` : `找到 ${files.length} 个视频`}，${config.evolinkKey ? '直连 Gemini（' + (config.evolinkModel || 'gemini-3-pro-preview') + '）' : '调用后端模型 ' + VIDEO_ANALYSIS_MODEL_ID} 并发解析 · 并发 ${MANUAL_ANALYZE_CONCURRENCY} · 失败自动重试最多 ${VIDEO_ANALYZE_MAX_RETRIES} 次`);
+      let ok = 0;
+      let failed = 0;
+      await runWithConcurrency(files, MANUAL_ANALYZE_CONCURRENCY, async (file, i) => {
+        if (analysisAbort) return;
+        const result = await analyzeVideoFileWithRetry(file, i, files.length, config);
+        if (result.ok) ok++;
+        else if (!result.aborted) failed++;
+      });
+      logAnalysis(analysisAbort ? `已停止解析 · 成功 ${ok} · 失败 ${failed}` : `${opts.missingOnly ? '补漏解析完成' : '视频解析完成'} · 成功 ${ok} · 失败 ${failed}`);
+      if (!analysisAbort && ok > 0 && api.exportAnalyses) {
+        const format = selectedExportFormat();
+        logAnalysis(`正在按集数顺序导出整部剧合集（${format}）。注意：缓存目录里的 txt 是内部中间文件，最终文档会导出到解析目录根部。`);
+        const exported = await api.exportAnalyses({
+          rootDir,
+          format,
+          title: activeSeriesTitle || folderNameOfPath(rootDir) || '视频解析合集',
+          filePaths: analysisSelectedFiles.length ? files.map(file => file.path) : undefined,
+          silent: true,
+        });
+        if (exported && exported.ok) {
+          logAnalysis(`已导出 ${exported.count} 集合集：${exported.outputPath}`);
+          setStatus(`已导出 ${exported.format} 合集：${exported.outputPath}`);
+        } else {
+          logAnalysis(`合集导出失败：${exported && exported.error ? exported.error : '未知错误'}`);
+        }
+      }
+    } catch (err) {
+      logAnalysis('视频解析出错：' + (err && err.message ? err.message : err));
+      setStatus('视频解析出错', 'error');
+    } finally {
+      analysisAbort = false;
+      updateAnalysisUi(false);
+    }
+  }
+
+  async function stopVideoAnalysis() {
+    analysisAbort = true;
+    logAnalysis('正在停止视频解析…');
+    if (api && api.cancelVideoAnalysis) {
+      try { await api.cancelVideoAnalysis(); } catch (e) {}
+    }
+  }
+
+  async function exportAnalyses() {
+    if (!api || !api.exportAnalyses) {
+      setStatus('当前安装包缺少导出接口，请重新打包', 'error');
+      logAnalysis('当前安装包缺少导出接口（exportAnalyses），请确认 main.js 和 preload 也更新了', 'replace');
+      return;
+    }
+    const rootDir = await analysisRootDir();
+    if (!rootDir) {
+      setStatus('请先设置保存目录', 'error');
+      return;
+    }
+    const format = selectedExportFormat();
+    const btn = $('exportAnalysesBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '导出中…'; }
+    logAnalysis(`开始导出解析合集（${format}）· ${analysisSelectedFiles.length ? '选中视频 ' + analysisSelectedFiles.length + ' 个' : '目录：' + rootDir}`);
+    try {
+      const result = await api.exportAnalyses({
+        rootDir,
+        format,
+        title: activeSeriesTitle || folderNameOfPath(rootDir) || '视频解析合集',
+        filePaths: analysisSelectedFiles.length ? analysisSelectedFiles.map(file => file.path) : undefined,
+      });
+      if (result && result.ok) {
+        logAnalysis(`已导出 ${result.count} 集 → ${result.outputPath}`);
+        setStatus(`导出成功（${result.format}）：${result.outputPath}`);
+      } else if (result && result.canceled) {
+        logAnalysis('已取消导出');
+        setStatus('已取消导出');
+      } else {
+        logAnalysis('导出失败：' + (result && result.error ? result.error : '未知错误'));
+        setStatus('导出失败', 'error');
+      }
+    } catch (err) {
+      logAnalysis('导出出错：' + (err && err.message ? err.message : err));
+      setStatus('导出出错', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '导出解析'; }
+    }
+  }
+
+  function updateRetryUi() {
+    const btn = $('retryFailedBtn');
+    if (!btn) return;
+    const count = failedBatchItems.length;
+    btn.disabled = scanRunning || count === 0;
+    btn.textContent = count ? `重试失败(${count})` : '重试失败';
+    btn.title = count ? `重试 ${count} 个失败链接` : '没有失败链接可重试';
+  }
+
+  function recordBatchFailure(item, reason, options) {
+    if (!item || !item.url) return;
+    const reasonText = String(reason || '未知原因');
+    const existing = failedBatchItems.find(x => x.url === item.url);
+    if (existing) {
+      existing.reason = reasonText;
+      existing.failedAt = Date.now();
+      existing.title = item.title || existing.title;
+      existing.type = (options && options.type) || existing.type;
+    } else {
+      failedBatchItems.push({ ...item, reason: reasonText, failedAt: Date.now(), type: options && options.type });
+    }
+    logTask(`失败链接：${item.title || '未命名剧'} · ${reasonText} · ${item.url}`);
+    saveBatchFailures();
+    if ((options && options.notice) || isNoVideoReason(reasonText)) {
+      pushSkipNotice(item, reasonText);
+    }
+    updateRetryUi();
+  }
+
+  function clearBatchFailures() {
+    failedBatchItems = [];
+    saveBatchFailures();
+    updateRetryUi();
+  }
+
+  async function requestStop(message) {
+    scanAbort = true;
+    const text = message || '正在停止…';
+    logTask(text);
+    setStatus(text);
+    const waiters = stopWaiters.slice();
+    stopWaiters = [];
+    waiters.forEach(fn => fn());
+    if (api && api.cancelMerges) {
+      try {
+        const res = await api.cancelMerges();
+        if (res && res.count) logTask(`已请求停止 ${res.count} 个正在合成的 MP4 任务`);
+      } catch (err) {
+        logTask('停止合成任务失败：' + (err && err.message ? err.message : err));
+      }
+    }
+    if (api && api.browserCommand) {
+      try { await api.browserCommand('stop'); } catch (err) {}
+    }
+    for (const [jobId, waiter] of mergeWaiters.entries()) {
+      mergeWaiters.delete(jobId);
+      waiter.reject(new Error('任务已手动停止'));
+    }
+  }
+
+  function normalizeUrl(raw) {
+    let text = String(raw || '').trim();
+    if (!text) return '';
+    const found = text.match(/https?:\/\/[^\s"'<>]+/i);
+    if (found) text = found[0].replace(/[，。；;、]+$/g, '');
+    return /^https?:\/\//i.test(text) ? text : 'https://' + text;
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => {
+      if (scanAbort) { resolve(); return; }
+      const timer = setTimeout(done, ms);
+      function done() {
+        clearTimeout(timer);
+        stopWaiters = stopWaiters.filter(fn => fn !== done);
+        resolve();
+      }
+      stopWaiters.push(done);
+    });
+  }
+
+  function withTimeout(promise, ms, fallback) {
+    return new Promise(resolve => {
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        resolve(fallback);
+      }, ms);
+      Promise.resolve(promise).then(
+        value => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(value);
+        },
+        () => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(fallback);
+        }
+      );
+    });
+  }
+
+  async function safePlayerAction(action, timeoutMs) {
+    if (!api || !api.playerAction) return { ok: false, error: '缺少播放器接口' };
+    return await withTimeout(
+      api.playerAction(action),
+      timeoutMs || 2500,
+      { ok: false, error: `${action} 超时，继续下一步` }
+    );
+  }
+
+  async function dismissBlockingPopups(context) {
+    return { ok: true, closed: 0 };
+  }
+
+  function isVerificationPageInfo(info) {
+    const text = [info && info.title, info && info.url, info && info.text].filter(Boolean).join('\n').toLowerCase();
+    return /cloudflare|turnstile|ray id|正在进行安全验证|请验证您是真人|验证您不是自动程序|checking if the site connection is secure|verify you are human|just a moment/.test(text);
+  }
+
+  async function waitForManualVerificationIfNeeded(context) {
+    if (!api || !api.pageInfo) return true;
+    await dismissBlockingPopups(context || '当前页面');
+    let info = null;
+    try { info = await api.pageInfo(); } catch (e) {}
+    if (!isVerificationPageInfo(info)) return true;
+
+    const label = context || '当前页面';
+    const started = Date.now();
+    logTask(`${label} 遇到 Cloudflare/真人验证，请在左侧浏览器手动完成验证；验证通过后会自动继续`);
+    setStatus('等待手动完成真人验证...');
+    while (!scanAbort && Date.now() - started < VERIFICATION_WAIT_TIMEOUT_MS) {
+      await sleep(3000);
+      await dismissBlockingPopups(label);
+      try { info = await api.pageInfo(); } catch (e) {}
+      if (!isVerificationPageInfo(info)) {
+        logTask(`${label} 真人验证已通过，继续抓取`);
+        return true;
+      }
+    }
+    if (scanAbort) return false;
+    logTask(`${label} 真人验证等待超时，本集暂时跳过`);
+    return false;
+  }
+
+  async function parkBrowserViewForModal() {
+    try { await api.setViewBounds({ x: 99999, y: 99999, width: 120, height: 120 }); } catch (e) {}
+  }
+
+  async function askInput(message, defaultValue) {
+    inputModalOpen = true;
+    document.querySelectorAll('.input-modal-overlay').forEach(node => node.remove());
+    await parkBrowserViewForModal();
+    const result = await new Promise((resolve) => {
+      let settled = false;
+      const overlay = document.createElement('div');
+      overlay.className = 'input-modal-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(33,27,22,.55);display:grid;place-items:center;z-index:2147483647;pointer-events:auto;';
+      const box = document.createElement('div');
+      box.style.cssText = 'background:var(--paper-soft);border:1px solid var(--rule);border-radius:10px;min-width:360px;max-width:90vw;padding:20px;box-shadow:0 18px 60px rgba(0,0,0,.35);pointer-events:auto;';
+      const msg = document.createElement('div');
+      msg.style.cssText = 'white-space:pre-wrap;color:var(--ink);margin-bottom:14px;line-height:1.6;font-size:14px;';
+      msg.textContent = message;
+      const input = document.createElement('input');
+      input.value = defaultValue == null ? '' : String(defaultValue);
+      input.style.cssText = 'width:100%;height:38px;border:1px solid var(--rule);border-radius:7px;background:#fff;color:var(--ink);padding:0 12px;outline:none;margin-bottom:16px;font-size:15px;';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.textContent = '取消';
+      cancelBtn.className = 'btn';
+      const okBtn = document.createElement('button');
+      okBtn.type = 'button';
+      okBtn.textContent = '确定';
+      okBtn.className = 'btn primary';
+      row.append(cancelBtn, okBtn);
+      box.append(msg, input, row);
+      overlay.append(box);
+      document.body.append(overlay);
+      const keepHidden = setInterval(() => { if (inputModalOpen) parkBrowserViewForModal(); }, 500);
+      setTimeout(() => {
+        try {
+          input.focus();
+          input.select();
+        } catch (e) {}
+      }, 0);
+      const done = (val) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(keepHidden);
+        overlay.remove();
+        inputModalOpen = false;
+        resolve(val);
+      };
+      const stop = (e) => {
+        if (!e) return;
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      cancelBtn.addEventListener('pointerdown', (e) => { stop(e); done(null); });
+      cancelBtn.addEventListener('click', (e) => { stop(e); done(null); });
+      okBtn.addEventListener('pointerdown', (e) => { stop(e); done(input.value); });
+      okBtn.addEventListener('click', (e) => { stop(e); done(input.value); });
+      box.addEventListener('pointerdown', (e) => e.stopPropagation());
+      box.addEventListener('click', (e) => e.stopPropagation());
+      input.onkeydown = (e) => { if (e.key === 'Enter') done(input.value); else if (e.key === 'Escape') done(null); };
+      overlay.addEventListener('pointerdown', (e) => { if (e.target === overlay) done(null); });
+    });
+    inputModalOpen = false;
+    try { await syncBounds(); } catch (e) {}
+    return result;
+  }
+
+  function setDownloadDir(dir, options) {
+    downloadDir = String(dir || '');
+    $('downloadDirInput').value = downloadDir;
+    if (downloadDir) localStorage.setItem(DOWNLOAD_DIR_KEY, downloadDir);
+    else localStorage.removeItem(DOWNLOAD_DIR_KEY);
+    if (!(options && options.skipMainPersist) && api && api.setDownloadDir) {
+      api.setDownloadDir(downloadDir).catch(() => {});
+    }
+  }
+
+  function syncDownloadDirFromInput() {
+    const value = $('downloadDirInput').value.trim();
+    if (value !== downloadDir) {
+      setDownloadDir(value);
+      if (value) setStatus('总保存目录已更新: ' + value);
+    }
+    return downloadDir;
+  }
+
+  function setAnalysisDir(dir) {
+    analysisDir = String(dir || '').trim();
+    const input = $('analysisDirInput');
+    if (input) input.value = analysisDir;
+    if (analysisDir) localStorage.setItem(ANALYSIS_DIR_KEY, analysisDir);
+    else localStorage.removeItem(ANALYSIS_DIR_KEY);
+    updateAnalysisUi(analysisRunning);
+  }
+
+  function syncAnalysisDirFromInput() {
+    const input = $('analysisDirInput');
+    if (!input) return analysisDir;
+    const value = input.value.trim();
+    if (value !== analysisDir) {
+      setAnalysisDir(value);
+      clearAnalysisSelectedFiles();
+      setStatus(value ? '解析目录已更新: ' + value : '已清空解析目录，将回到当前剧目录/总目录解析');
+    }
+    return analysisDir;
+  }
+
+  async function restoreDownloadDir() {
+    let saved = downloadDir;
+    if (api && api.getConfig) {
+      try {
+        const res = await api.getConfig();
+        if (res && res.ok && res.config && res.config.downloadDir) saved = res.config.downloadDir;
+      } catch (e) {}
+    }
+    setDownloadDir(saved);
+  }
+
+  function joinPath(dir, file) {
+    const base = String(dir || '').replace(/[\\\/]+$/, '');
+    const sep = base.includes('\\') ? '\\' : '/';
+    return base + sep + file;
+  }
+
+  function stampForFolder(date) {
+    const d = date || new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${pad(d.getMilliseconds())}`;
+  }
+
+  function linkIdentity(rawUrl) {
+    const text = String(rawUrl || '');
+    const longId = text.match(/\b(\d{8,})\b/);
+    const ep = extractEpisodeNo(text);
+    return [longId && longId[1], ep ? ('ep' + ep) : ''].filter(Boolean).join('-');
+  }
+
+  function linkFolderKey(rawUrl) {
+    const target = normalizeUrl(rawUrl);
+    if (!target) return '';
+    try {
+      const u = new URL(target);
+      u.protocol = u.protocol.toLowerCase();
+      u.hostname = u.hostname.toLowerCase().replace(/^www\./, '');
+      for (const key of Array.from(u.searchParams.keys())) {
+        const lower = String(key || '').toLowerCase();
+        const value = u.searchParams.get(key) || '';
+        if (EPISODE_QUERY_KEYS.includes(lower) && /^\d{1,4}$/.test(value)) u.searchParams.delete(key);
+        if (['from', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].includes(lower)) u.searchParams.delete(key);
+      }
+      u.pathname = u.pathname
+        .replace(/(\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-)\d{1,4}(\.html)$/i, '$1EP$2')
+        .replace(/(^|[\/_-])(?:episode|ep)([\/_-]?)\d{1,4}(?=$|[\/_-])/i, '$1ep$2EP')
+        .replace(/-ep-\d{1,4}(?=$|[\/?#_-])/i, '-ep-EP');
+      if (!/^#\/player\?/i.test(u.hash || '')) u.hash = '';
+      return u.toString().replace(/[?#]$/, '');
+    } catch {
+      return target
+        .replace(/([?&])(?:episode|ep|eps|e|chapter|chapter_id)=\d{1,4}\b/ig, '$1')
+        .replace(/(\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-)\d{1,4}(\.html)/i, '$1EP$2')
+        .replace(/(^|[\/_-])(?:episode|ep)([\/_-]?)\d{1,4}(?=$|[\/?#_-])/i, '$1ep$2EP')
+        .replace(/-ep-\d{1,4}(?=$|[\/?#_-])/i, '-ep-EP');
+    }
+  }
+
+  function beginFolderBatchScope() {
+    activeBatchFolderStamp = stampForFolder();
+    activeLinkFolderMap = new Map();
+    activeLinkFolderPaths = new Set();
+  }
+
+  function linkRunDownloadDir(rootDir, rawUrl, title) {
+    const key = linkFolderKey(rawUrl) || normalizeUrl(rawUrl) || String(rawUrl || '');
+    if (key && activeLinkFolderMap.has(key)) return activeLinkFolderMap.get(key);
+    const baseTitle = cleanSeriesTitle(title) || cleanSeriesTitle(titleFromUrl(rawUrl)) || '未命名剧';
+    let linkId = '';
+    try {
+      const u = new URL(rawUrl);
+      const pathId = u.pathname.replace(/[^a-z0-9]/gi, '').slice(-12);
+      const host = u.hostname.replace(/^www\./, '').split('.')[0];
+      linkId = host + '-' + pathId;
+    } catch {
+      linkId = 'link-' + Date.now();
+    }
+    const timeStamp = activeBatchFolderStamp || stampForFolder();
+    const baseFolderName = cleanOutputName(
+      [baseTitle, linkId, timeStamp].filter(Boolean).join('-'),
+      '视频任务-' + timeStamp
+    ).slice(0, 120);
+    let folderName = baseFolderName;
+    let dir = joinPath(rootDir, folderName);
+    let suffix = 2;
+    while (activeLinkFolderPaths.has(dir) && (!key || activeLinkFolderMap.get(key) !== dir)) {
+      folderName = cleanOutputName(`${baseFolderName}-${suffix}`, baseFolderName).slice(0, 120);
+      dir = joinPath(rootDir, folderName);
+      suffix++;
+    }
+    if (key) activeLinkFolderMap.set(key, dir);
+    activeLinkFolderPaths.add(dir);
+    return dir;
+  }
+
+  async function ensureDownloadDir() {
+    syncDownloadDirFromInput();
+    if (downloadDir) return downloadDir;
+    const res = await api.selectDirectory();
+    if (!res || !res.ok) return '';
+    setDownloadDir(res.path);
+    return res.path;
+  }
+
+  async function cleanupEmptyLinkDir(dir, rootDir, label) {
+    if (!dir || !api.removeEmptyDir) return false;
+    try {
+      const res = await api.removeEmptyDir({ dir, rootDir: rootDir || downloadDir || lastBatchRootDir || '' });
+      if (res && res.removed) {
+        logTask(`未保存成功，已移除空文件夹：${label || dir}`);
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function setActiveSourceInfo(info) {
+    activeSourceInfo = info ? { ...info } : null;
+  }
+
+  function savedEpisodeNumbers() {
+    return Array.from(activeDownloadedEpisodes)
+      .map(n => Number(n) || 0)
+      .filter(Boolean)
+      .sort((a, b) => a - b);
+  }
+
+  async function saveDramaSourceDocument(dir, extra) {
+    if (!dir || !api.saveSourceInfo) return false;
+    const base = activeSourceInfo || {};
+    const payload = {
+      ...base,
+      ...(extra || {}),
+      dir,
+      title: (extra && extra.title) || base.title || activeSeriesTitle || lastState.title || titleFromUrl(base.originalUrl || base.startUrl || lastState.url),
+      currentUrl: (extra && extra.currentUrl) || lastState.url || $('addressInput').value || base.currentUrl || '',
+      savedEpisodes: savedEpisodeNumbers(),
+      savedTotal: activeDownloadedEpisodes.size || (extra && extra.savedTotal) || 0,
+    };
+    try {
+      const res = await api.saveSourceInfo(payload);
+      if (res && res.ok) {
+        logTask(`来源链接已保存：${res.path}`);
+        return true;
+      }
+      logTask(`来源链接保存失败：${res && res.error ? res.error : '未知错误'}`);
+    } catch (err) {
+      logTask(`来源链接保存失败：${err && err.message ? err.message : err}`);
+    }
+    return false;
+  }
+
+  function titleFromUrl(rawUrl) {
+    try {
+      const u = new URL(normalizeUrl(rawUrl));
+      const parts = u.pathname.split('/').map(x => {
+        try { return decodeURIComponent(x); } catch { return x; }
+      }).filter(Boolean);
+      const useful = parts
+        .filter(x => !/^\d+$/.test(x))
+        .filter(x => !/^(video|shorts?|watch|episode|episodes?)$/i.test(x))
+        .sort((a, b) => b.length - a.length)[0];
+      return (useful || u.hostname.replace(/^www\./, '')).replace(/[-_]+/g, ' ');
+    } catch {
+      return '';
+    }
+  }
+
+  function cleanSeriesTitle(text) {
+    let name = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!name) return '';
+    name = name.split(/\s*[|｜]\s*/)[0].trim();
+    name = name
+      .replace(/\s*[-–—]\s*Episode\s*\d{1,4}\b.*$/i, '')
+      .replace(/\s*[-–—]?\s*\bEP\s*\d{1,4}\b.*$/i, '')
+      .replace(/\s*[-–—]\s*第\s*\d{1,4}\s*集.*$/i, '')
+      .replace(/\bEpisode\s*\d{1,4}\b.*$/i, '')
+      .replace(/\bEP\s*\d{1,4}\b.*$/i, '')
+      .replace(/第\s*\d{1,4}\s*集.*$/i, '')
+      .replace(/\s+\d{8,}\b.*$/i, '')
+      .replace(/\s*[-–—]\s*full movie\b.*$/i, '')
+      .replace(/\s*[-–—]\s*watch\b.*$/i, '')
+      .replace(/\s*[-–—]\s*online\b.*$/i, '')
+      .trim();
+    return name ? cleanOutputName(name, '') : '';
+  }
+
+  function currentSeriesFolderName() {
+    const groups = currentEpisodeGroups();
+    const firstMain = groups.map(g => g.main || (g.items && g.items[0])).find(Boolean) || null;
+    const candidates = [
+      activeSeriesTitle,
+      lastState.title,
+      firstMain && firstMain.pageTitle,
+      $('addressInput').value,
+      lastState.url,
+      firstMain && firstMain.referer,
+      firstMain && firstMain.url,
+    ];
+    const isUseful = (name) => name && !/^https?_?/i.test(name) && !/^(about_blank|about|blank|episode|video|watch)$/i.test(name);
+    for (const candidate of candidates) {
+      const fromTitle = cleanSeriesTitle(candidate);
+      if (isUseful(fromTitle)) return fromTitle;
+      const fromUrl = titleFromUrl(candidate);
+      const cleanedUrlTitle = cleanSeriesTitle(fromUrl);
+      if (isUseful(cleanedUrlTitle)) return cleanedUrlTitle;
+    }
+    return '未命名剧';
+  }
+
+  function currentSeriesDownloadDir(rootDir) {
+    return joinPath(rootDir, currentSeriesFolderName());
+  }
+
+  const EPISODE_QUERY_KEYS = ['episode', 'ep', 'eps', 'e', 'chapter', 'chapter_id'];
+
+  function episodeQueryKey(urlObj) {
+    for (const [key, value] of urlObj.searchParams.entries()) {
+      if (EPISODE_QUERY_KEYS.includes(String(key || '').toLowerCase()) && value && /^\d{1,4}$/.test(value)) return key;
+    }
+    return '';
+  }
+
+  function isMalformedDramaShortsEpisodeUrl(rawUrl) {
+    return false;
+  }
+
+  function isOpaqueHashPlayerUrl(rawUrl) {
+    const target = normalizeUrl(rawUrl);
+    if (!target) return false;
+    try {
+      const u = new URL(target);
+      return /#\/player/i.test(u.hash) && /(?:[?&])k=/.test(u.hash);
+    } catch {
+      return /#\/player[^#]*[?&]k=/i.test(target);
+    }
+  }
+
+  // 像 ReelShort 这类站点：URL 里的 episode-N 只是给人看的，真正定位某一集靠它后面那串"每集唯一"的
+  // 不透明 id（例 /episodes/episode-1-the-luna-s-second-choice-6a0ac84fb7d7d2bfe20421a5-d4dz9noypp）。
+  // 这种链接不能靠"把数字 +1"推算下一集——换出来的链接里 id 还是第 1 集的，结果整剧都抓成第 1 集。
+  // 命中后改走"页面选集列表 / 下一集控件"，而不是 URL 改号。
+  function hasPerEpisodeOpaqueId(rawUrl) {
+    const target = normalizeUrl(rawUrl);
+    if (!target) return false;
+    let path = target;
+    try { path = decodeURIComponent(new URL(target).pathname); } catch {}
+    // 只看"包含 episode-<N> 的那个路径段"，避免误伤 /series/<id>/episode-1 这种 id 与集号分段的情况
+    const epSeg = path.split('/').filter(Boolean)
+      .find(s => /(?:^|[_-])(?:episode|ep)[_-]?\d{1,4}(?=$|[_-])/i.test(s));
+    if (!epSeg) return false;
+    // 1) 段里有 24 位及以上十六进制串（MongoDB ObjectId 之类）→ 每集唯一 id 的强信号
+    if (/[0-9a-f]{24,}/i.test(epSeg)) return true;
+    // 2) episode-<N> 之后还跟着随机不透明 token（字母+数字混合、>=10 位）
+    const m = epSeg.match(/(?:^|[_-])(?:episode|ep)[_-]?\d{1,4}[_-].*?[_-]([a-z0-9]{10,})$/i);
+    if (m && /[a-z]/i.test(m[1]) && /\d/.test(m[1])) return true;
+    return false;
+  }
+
+  function vodplayEpisodeMatch(pathOrUrl) {
+    const path = String(pathOrUrl || '').split(/[?#]/)[0];
+    return path.match(/\/(?:vodplay|play)\/([^\/?#]+?-\d{1,4}-)(\d{1,4})(\.html)$/i);
+  }
+
+  function buildVodplayEpisodePath(path, episodeNo) {
+    const next = String(episodeNo);
+    return String(path || '').replace(/(\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-)\d{1,4}(\.html)$/i, '$1' + next + '$2');
+  }
+
+  function urlLooksEpisode(rawUrl) {
+    const target = normalizeUrl(rawUrl);
+    if (!target) return false;
+    if (isMalformedDramaShortsEpisodeUrl(target)) return false;
+    if (isOpaqueHashPlayerUrl(target)) return false;
+    try {
+      const u = new URL(target);
+      if (episodeQueryKey(u)) return true;
+      if (vodplayEpisodeMatch(u.pathname)) return true;
+      if (hasPerEpisodeOpaqueId(target)) return false;
+      return /(^|[\/_-])(?:episode|ep)([\/_-]?)(\d{1,4})(?=$|[\/?#_-])/i.test(u.pathname);
+    } catch {
+      if (hasPerEpisodeOpaqueId(target)) return false;
+      return /[?&](?:episode|ep|eps|e|chapter|chapter_id)=\d{1,4}\b|\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-\d{1,4}\.html(?:[?#]|$)|(^|[\/_-])(?:episode|ep)([\/_-]?)(\d{1,4})(?=$|[\/?#_-])/i.test(target);
+    }
+  }
+
+  function buildEpisodeUrl(baseUrl, episodeNo) {
+    const target = normalizeUrl(baseUrl || lastState.url || $('addressInput').value);
+    if (!target) return '';
+    if (isMalformedDramaShortsEpisodeUrl(target)) return '';
+    if (isOpaqueHashPlayerUrl(target)) return '';
+    try {
+      const u = new URL(target);
+      const queryKey = episodeQueryKey(u);
+      if (queryKey) {
+        u.searchParams.set(queryKey, String(episodeNo));
+        return u.toString();
+      }
+      const path = u.pathname;
+      if (vodplayEpisodeMatch(path)) {
+        u.pathname = buildVodplayEpisodePath(path, episodeNo);
+        return u.toString();
+      }
+      if (hasPerEpisodeOpaqueId(target)) return '';
+      if (/(^|[\/_-])(?:episode|ep)([\/_-]?)(\d{1,4})(?=$|[\/_-])/i.test(path)) {
+        u.pathname = path.replace(/(^|[\/_-])(episode|ep)([\/_-]?)(\d{1,4})(?=$|[\/_-])/i, (_m, lead, word, sep) => {
+          return lead + word + sep + String(episodeNo);
+        });
+        return u.toString();
+      }
+      u.searchParams.set('episode', String(episodeNo));
+      return u.toString();
+    } catch {
+      if (/[?&](?:episode|ep|eps|e|chapter|chapter_id)=\d{1,4}\b/i.test(target)) {
+        return target.replace(/([?&](?:episode|ep|eps|e|chapter|chapter_id)=)\d{1,4}\b/i, '$1' + episodeNo);
+      }
+      if (/\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-\d{1,4}\.html(?:[?#]|$)/i.test(target)) {
+        return target.replace(/(\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-)\d{1,4}(\.html)/i, '$1' + episodeNo + '$2');
+      }
+      if (hasPerEpisodeOpaqueId(target)) return '';
+      if (/(^|[\/_-])(?:episode|ep)([\/_-]?)(\d{1,4})(?=$|[/?#_-])/i.test(target)) {
+        return target.replace(/(^|[\/_-])(episode|ep)([\/_-]?)(\d{1,4})(?=$|[/?#_-])/i, (_m, lead, word, sep) => {
+          return lead + word + sep + String(episodeNo);
+        });
+      }
+      return target + (target.includes('?') ? '&' : '?') + 'episode=' + episodeNo;
+    }
+  }
+
+  function firstEpisodeUrlInfo(rawUrl) {
+    const inputUrl = normalizeUrl(rawUrl);
+    if (!inputUrl) return { inputUrl: '', firstUrl: '', inputEpisode: 0, changed: false };
+    const inputEpisode = extractEpisodeNo(inputUrl);
+    const firstUrl = urlLooksEpisode(inputUrl) ? buildEpisodeUrl(inputUrl, 1) : inputUrl;
+    return {
+      inputUrl,
+      firstUrl: firstUrl || inputUrl,
+      inputEpisode,
+      changed: !!(firstUrl && normalizeUrl(firstUrl) !== inputUrl),
+    };
+  }
+
+  function parseRange(text, currentEpisode) {
+    const raw = String(text || '').trim();
+    const m = raw.match(/^(\d+)\s*[-~到,，]\s*(\d+)$/);
+    if (m) {
+      const start = Number(m[1]);
+      const end = Number(m[2]);
+      if (start > 0 && end >= start) return { start, end };
+    }
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return { start: 1, end: n };
+    const cur = Number(currentEpisode) || 1;
+    return { start: 1, end: Math.max(cur, 20) };
+  }
+
+  function parseEpisodeInfo(text) {
+    const raw = String(text || '').replace(/\s+/g, ' ');
+    const patterns = [
+      /集\s*(\d{1,4})\s*\/\s*(\d{1,4})/i,
+      /第\s*(\d{1,4})\s*集\s*[\/／]\s*(?:共\s*)?(\d{1,4})\s*集?/i,
+      /episode\s*(\d{1,4})\s*(?:\/|of)\s*(\d{1,4})/i,
+      /\b(\d{1,4})\s*\/\s*(\d{1,4})\s*(?:episodes?|eps?|集)\b/i,
+      /共\s*(\d{1,4})\s*集/i,
+    ];
+    for (const pattern of patterns) {
+      const m = raw.match(pattern);
+      if (!m) continue;
+      if (m.length === 2) {
+        const total = Number(m[1]);
+        if (total > 0) return { current: 1, total };
+      }
+      const current = Number(m[1]);
+      const total = Number(m[2]);
+      if (current > 0 && total >= current) return { current, total };
+    }
+    return { current: 0, total: 0 };
+  }
+
+  async function inferEpisodeRange() {
+    const fallbackCurrent = extractEpisodeNo(lastState.url) || extractEpisodeNo($('addressInput').value) || 1;
+    let pageText = [lastState.title, lastState.url, $('addressInput').value].filter(Boolean).join(' ');
+    try {
+      if (api.pageInfo) {
+        const info = await api.pageInfo();
+        if (info && info.ok) {
+          pageText = [info.title, info.url, info.text, pageText].filter(Boolean).join(' ');
+        }
+      }
+    } catch {}
+    const parsed = parseEpisodeInfo(pageText);
+    if (parsed.total) {
+      return {
+        start: 1,
+        end: parsed.total,
+        current: parsed.current || fallbackCurrent,
+        inferred: true,
+      };
+    }
+    return {
+      start: 1,
+      end: Math.max(fallbackCurrent, 20),
+      current: fallbackCurrent,
+      inferred: false,
+    };
+  }
+
+  function waitForPageIdle(timeoutMs) {
+    return new Promise(resolve => {
+      if (scanAbort) { resolve(); return; }
+      const timer = setTimeout(done, timeoutMs);
+      let finished = false;
+      function done() {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        loadingWaiters = loadingWaiters.filter(fn => fn !== done);
+        stopWaiters = stopWaiters.filter(fn => fn !== done);
+        resolve();
+      }
+      loadingWaiters.push(done);
+      stopWaiters.push(done);
+    });
+  }
+
+  function formatSize(size) {
+    const n = Number(size) || 0;
+    if (!n) return '未知大小';
+    if (n >= 1024 * 1024 * 1024) return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(2) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+    return n + ' B';
+  }
+
+  function typeOf(item) {
+    const ext = (item.ext || '').toLowerCase();
+    const mime = (item.mime || '').toLowerCase();
+    if (ext === 'm3u8' || ext === 'm3u') return 'm3u8';
+    if (ext === 'mpd') return 'mpd';
+    if (mime.startsWith('audio/') || ['mp3', 'm4a', 'aac', 'ogg', 'wav', 'opus', 'weba'].includes(ext)) return 'audio';
+    return 'video';
+  }
+
+  function passesFilter(item) {
+    if (activeFilter === 'episode') return false;
+    if (activeFilter === 'all') return true;
+    return typeOf(item) === activeFilter;
+  }
+
+  function escapeAttr(text) {
+    return String(text || '').replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[ch]);
+  }
+
+  function curlFor(item) {
+    const parts = ['curl', '-L', JSON.stringify(item.url)];
+    if (item.referer) parts.push('-H', JSON.stringify('Referer: ' + item.referer));
+    if (item.userAgent) parts.push('-H', JSON.stringify('User-Agent: ' + item.userAgent));
+    return parts.join(' ');
+  }
+
+  function isSegment(item) {
+    const ext = (item.ext || '').toLowerCase();
+    return ext === 'ts' || ext === 'm4s' || /[_-]\d{3,}\.(ts|m4s)(?:[?#]|$)/i.test(item.url || '');
+  }
+
+  function isWholeMedia(item) {
+    const kind = typeOf(item);
+    const ext = (item.ext || '').toLowerCase();
+    return kind === 'm3u8' || kind === 'mpd' || (kind === 'video' && !isSegment(item) && ext !== 'ts' && ext !== 'm4s');
+  }
+
+  function isYoutubePlaybackUrl(rawUrl) {
+    try {
+      const u = new URL(String(rawUrl || ''));
+      return /(^|\.)googlevideo\.com$/i.test(u.hostname) && /\/videoplayback\b/i.test(u.pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  function isYoutubePageUrl(rawUrl) {
+    try {
+      const u = new URL(String(rawUrl || ''));
+      return /(^|\.)youtube\.com$/i.test(u.hostname) || /(^|\.)youtu\.be$/i.test(u.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  function normalizeYoutubePlaybackUrl(rawUrl) {
+    try {
+      const u = new URL(String(rawUrl || ''));
+      // 浏览器有时只请求某个 byte range；交给 ffmpeg 时去掉这些分片参数，让它自己拉完整流。
+      ['range', 'rn', 'rbuf', 'ump'].forEach(key => u.searchParams.delete(key));
+      return u.toString();
+    } catch {
+      return String(rawUrl || '');
+    }
+  }
+
+  function youtubeStreamInfo(item) {
+    try {
+      const u = new URL(String(item && item.url || ''));
+      const mime = decodeURIComponent(u.searchParams.get('mime') || item.mime || '').split(';')[0].trim().toLowerCase();
+      const type = mime.startsWith('audio/') ? 'audio' : mime.startsWith('video/') ? 'video' : typeOf(item);
+      const qualityLabel = u.searchParams.get('quality_label') || '';
+      const sizeText = u.searchParams.get('size') || '';
+      const heightFromLabel = Number((qualityLabel.match(/(\d{3,4})p/i) || [])[1]) || 0;
+      const heightFromSize = Number((sizeText.match(/x(\d{3,4})/i) || [])[1]) || 0;
+      const bitrate = Number(u.searchParams.get('bitrate')) || 0;
+      const clen = Number(u.searchParams.get('clen')) || Number(item.size) || 0;
+      const itag = Number(u.searchParams.get('itag')) || 0;
+      const mp4Bonus = /mp4/i.test(mime) ? 100000000 : 0;
+      return {
+        item,
+        type,
+        mime,
+        itag,
+        height: Math.max(heightFromLabel, heightFromSize),
+        bitrate,
+        size: clen,
+        score: mp4Bonus + Math.max(heightFromLabel, heightFromSize) * 100000 + bitrate + Math.min(clen, 99999999) / 1000,
+      };
+    } catch {
+      return { item, type: typeOf(item), mime: item && item.mime || '', itag: 0, height: 0, bitrate: 0, size: Number(item && item.size) || 0, score: 0 };
+    }
+  }
+
+  function buildYoutubeGroups(list) {
+    const ytItems = list.filter(item => isYoutubePlaybackUrl(item.url));
+    if (!ytItems.length) return [];
+    const streams = ytItems.map(youtubeStreamInfo);
+    const videos = streams.filter(x => x.type === 'video').sort((a, b) => b.score - a.score);
+    const audios = streams.filter(x => x.type === 'audio').sort((a, b) => b.score - a.score);
+    const video = videos[0] || null;
+    const audio = audios[0] || null;
+    if (!video && !audio) return [];
+    const title = (lastState.title || (video && video.item.pageTitle) || (audio && audio.item.pageTitle) || 'YouTube 视频')
+      .replace(/\s*-\s*YouTube\s*$/i, '')
+      .trim() || 'YouTube 视频';
+    const items = [video && video.item, audio && audio.item].filter(Boolean);
+    const quality = video && video.height ? `${video.height}p` : '';
+    return [{
+      id: 'youtube:' + cryptoLike([video && video.item.url, audio && audio.item.url].filter(Boolean).join('|')),
+      kind: 'youtube',
+      episodeNo: 1,
+      label: 'YouTube',
+      title: `YouTube整集 · ${title}${quality ? ' · ' + quality : ''}`,
+      items,
+      main: video ? video.item : audio.item,
+      youtubePair: {
+        video: video && video.item,
+        audio: audio && audio.item,
+      },
+      size: items.reduce((sum, item) => sum + (Number(item.size) || 0), 0),
+      count: items.length,
+      capturedAt: Math.max(...items.map(item => item.capturedAt || 0)),
+      note: audio
+        ? 'YouTube 通常是视频流和音频流分离；这里会用双路合成保存成一个 MP4。'
+        : '只抓到 YouTube 视频流，暂时没有抓到音频流；请播放几秒后再试。',
+      incomplete: !video,
+    }];
+  }
+
+  function cryptoLike(text) {
+    let hash = 0;
+    const raw = String(text || '');
+    for (let i = 0; i < raw.length; i++) hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+    return Math.abs(hash).toString(36);
+  }
+
+  function parseSegment(item) {
+    try {
+      const u = new URL(item.url);
+      const parts = u.pathname.split('/');
+      const rawName = decodeURIComponent(parts.pop() || item.filename || 'segment.ts');
+      const dir = parts.join('/') + '/';
+      const match = rawName.match(/^(.*?)(\d+)(\.[a-z0-9]+)$/i);
+      const prefix = match ? match[1] : rawName.replace(/\.[^.]+$/, '');
+      const number = match ? Number(match[2]) : 0;
+      const suffix = match ? match[3].toLowerCase() : '.' + (item.ext || 'ts');
+      return {
+        key: u.origin + dir + prefix + '*' + suffix,
+        dirUrl: u.origin + dir,
+        prefix,
+        suffix,
+        number,
+        name: rawName,
+      };
+    } catch {
+      return {
+        key: 'segment:' + (item.url || item.id),
+        dirUrl: '',
+        prefix: '',
+        suffix: '.' + (item.ext || 'ts'),
+        number: 0,
+        name: item.filename || 'segment',
+      };
+    }
+  }
+
+  function cleanOutputName(name, fallback) {
+    const text = String(name || fallback || 'episode').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim();
+    return text || 'episode';
+  }
+
+  const RESOLUTION_NUMBERS = new Set([144, 240, 360, 480, 540, 576, 720, 1080, 1440, 2160, 4320]);
+
+  function dirKeyOf(url) {
+    try {
+      const u = new URL(url);
+      const parts = u.pathname.split('/');
+      parts.pop();
+      return u.origin + parts.join('/') + '/';
+    } catch {
+      return String(url || '').split(/[?#]/)[0].replace(/[^/\\]*$/, '');
+    }
+  }
+
+  function extractResourceEpisodeNo(text) {
+    const raw = String(text || '');
+    let name = raw;
+    try {
+      const seg = raw.split(/[?#]/)[0].split(/[\/\\]/).pop();
+      if (seg) name = seg;
+    } catch {}
+
+    const fileNamePatterns = [
+      /^(?:ep|episode|e)?[_-]?(\d{1,4})[_-]*\.(?:m3u8|m3u|mpd|mp4|m4v)$/i,
+      /^0*(\d{1,4})[_\-\s.]{1,3}\d{2,}\.(?:ts|m4s|mp4)$/i,
+      /^(?:manifest|index|playlist|chunklist|media)[_-]?(\d{1,4})\.(?:m3u8|m3u)$/i,
+    ];
+    for (const pattern of fileNamePatterns) {
+      const m = name.match(pattern);
+      if (m) {
+        const n = Number(m[1]);
+        if (n > 0 && !RESOLUTION_NUMBERS.has(n)) return n;
+      }
+    }
+    const dirMatch = raw.match(/[\/\\](?:ep|episode|e)?[_-]?(\d{1,4})[\/\\](?:manifest|index|playlist|chunklist|media)\.(?:m3u8|m3u)(?:[?#]|$)/i);
+    if (dirMatch) {
+      const n = Number(dirMatch[1]);
+      if (n > 0 && !RESOLUTION_NUMBERS.has(n)) return n;
+    }
+    return 0;
+  }
+
+  function extractEpisodeNo(text) {
+    const raw = String(text || '');
+    if (isOpaqueHashPlayerUrl(raw)) return 0;
+    const fromResource = extractResourceEpisodeNo(raw);
+    if (fromResource) return fromResource;
+    try {
+      const u = new URL(normalizeUrl(raw));
+      const key = episodeQueryKey(u);
+      if (key) return Number(u.searchParams.get(key)) || 0;
+      const vodplay = vodplayEpisodeMatch(u.pathname);
+      if (vodplay) return Number(vodplay[2]) || 0;
+    } catch {}
+    const patterns = [
+      /[?&](?:episode|ep|eps|e|chapter|chapter_id)=(\d{1,4})\b/i,
+      /\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-(\d{1,4})\.html(?:[?#]|$)/i,
+      /(?:^|[\/_-])(?:episode|ep)[\/\s_-]?(\d{1,4})(?=$|[/?#_-])/i,
+      /\bepisode\s*(\d+)\b/i,
+      /\bep\s*(\d+)\b/i,
+      /第\s*(\d+)\s*集/,
+    ];
+    for (const pattern of patterns) {
+      const m = raw.match(pattern);
+      if (m) return Number(m[1]);
+    }
+    return 0;
+  }
+
+  // ReelShort 这类站点：资源 URL 里的数字（CDN id / 分片序号 / 清晰度）不是集号，
+  // 却会盖过正确的 scanEpisodeNo，导致整集存错位置。命中后只信扫描锁定的集号 + 页面 URL 里的 episode-N。
+  // item.fromOpaqueSite 在资源到达时(onItem)就盖好章了，所以这里不依赖逐个解析 pageUrl。
+  function resourceIsFromOpaqueEpisodeSite(item) {
+    if (!item) return false;
+    if (item.fromOpaqueSite) return true;
+    return hasPerEpisodeOpaqueId(item.pageUrl) || hasPerEpisodeOpaqueId(item.referer);
+  }
+
+  function episodeNoOf(item) {
+    const opaque = resourceIsFromOpaqueEpisodeSite(item);
+    if (!opaque) {
+      const fromName = extractResourceEpisodeNo(item.filename) || extractResourceEpisodeNo(item.url);
+      if (fromName) return fromName;
+    }
+    if (item.scanEpisodeNo) return item.scanEpisodeNo;
+    return extractEpisodeNo(item.pageUrl) || extractEpisodeNo(item.referer);
+  }
+
+  function tagCapturedResourcesForEpisode(episodeNo, sinceTs, token) {
+    const ep = Number(episodeNo) || 0;
+    if (!ep) return 0;
+    let changed = 0;
+    for (const item of resources.values()) {
+      if ((item.capturedAt || 0) < sinceTs - 300) continue;
+      if (item.scanEpisodeNo) continue;
+      const opaque = resourceIsFromOpaqueEpisodeSite(item);
+      if (opaque) item.fromOpaqueSite = true;
+      // 普通站点：URL 自带集号的资源让它自报，不强行打标；不透明站点：URL 数字不可信，一律按扫描集号打标
+      if (!opaque && (extractResourceEpisodeNo(item.filename) || extractResourceEpisodeNo(item.url))) continue;
+      if (!isWholeMedia(item) && !isSegment(item)) continue;
+      item.scanEpisodeNo = ep;
+      if (token) item.scanToken = token;
+      changed++;
+    }
+    if (changed) render();
+    return changed;
+  }
+
+  function seriesKeyOf(item) {
+    const source = item.pageUrl || item.referer || item.url || '';
+    try {
+      const u = new URL(source);
+      for (const key of EPISODE_QUERY_KEYS) u.searchParams.delete(key);
+      u.pathname = u.pathname
+        .replace(/(\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-)\d{1,4}(\.html)$/i, '$1EP$2')
+        .replace(/(^|[\/_-])(?:episode|ep)([\/_-]?)(\d{1,4})(?=$|[\/_-])/i, '$1ep');
+      u.hash = '';
+      return u.origin + u.pathname;
+    } catch {
+      return String(source)
+        .replace(/([?&])(?:episode|ep|eps|e|chapter|chapter_id)=\d{1,4}\b/ig, '$1')
+        .replace(/(\/(?:vodplay|play)\/[^\/?#]+?-\d{1,4}-)\d{1,4}(\.html)/i, '$1EP$2')
+        .replace(/(^|[\/_-])(?:episode|ep)([\/_-]?)(\d{1,4})(?=$|[/?#_-])/i, '$1ep');
+    }
+  }
+
+  function shortEpisodeTitle(item, episodeNo) {
+    const title = String(item.pageTitle || '').replace(/\s*\|\s*.*$/, '').trim();
+    if (!title) return `第${episodeNo}集`;
+    return title.replace(new RegExp(`\\bEpisode\\s*${episodeNo}\\b`, 'i'), `第${episodeNo}集`);
+  }
+
+  function chooseMainResource(group) {
+    const items = group.items.slice();
+    const score = (item) => {
+      const name = String(item.filename || item.url || '').toLowerCase();
+      const kind = typeOf(item);
+      if (name.includes('manifest') && kind === 'm3u8') return 0;
+      if (kind === 'mpd') return 1;
+      if (kind === 'm3u8' && !name.includes('audio')) return 2;
+      if (kind === 'video' && !isSegment(item)) return 3;
+      if (kind === 'm3u8') return 4;
+      return 9;
+    };
+    return items.sort((a, b) => score(a) - score(b) || (b.size || 0) - (a.size || 0))[0] || null;
+  }
+
+  function buildTrueEpisodeGroups(list) {
+    const groups = new Map();
+    const candidates = list.filter(item => isWholeMedia(item) || isSegment(item));
+
+    const dirEpisode = new Map();
+    candidates.forEach((item) => {
+      if (!isWholeMedia(item)) return;
+      if (resourceIsFromOpaqueEpisodeSite(item)) return; // 不透明站点：URL 数字不可信，不参与目录集号推断
+      const n = extractResourceEpisodeNo(item.filename) || extractResourceEpisodeNo(item.url);
+      if (n && !dirEpisode.has(dirKeyOf(item.url))) dirEpisode.set(dirKeyOf(item.url), n);
+    });
+
+    const resolveEpisodeNo = (item) => {
+      // ReelShort 这类站点：忽略资源 URL 里的数字，只用扫描锁定的集号 + 页面 URL 里的 episode-N
+      if (resourceIsFromOpaqueEpisodeSite(item)) {
+        return Number(item.scanEpisodeNo || 0) || extractEpisodeNo(item.pageUrl) || extractEpisodeNo(item.referer);
+      }
+      const own = extractResourceEpisodeNo(item.filename) || extractResourceEpisodeNo(item.url);
+      if (own) return own;
+      const inherited = dirEpisode.get(dirKeyOf(item.url));
+      if (inherited) return inherited;
+      return Number(item.scanEpisodeNo || 0) || extractEpisodeNo(item.pageUrl) || extractEpisodeNo(item.referer);
+    };
+
+    candidates.forEach((item) => {
+      const episodeNo = resolveEpisodeNo(item);
+      if (!episodeNo) return;
+      const key = seriesKeyOf(item) + '#episode=' + episodeNo;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id: 'episode:' + key,
+          kind: 'episode',
+          episodeNo,
+          label: `第${episodeNo}集`,
+          title: shortEpisodeTitle(item, episodeNo),
+          items: [],
+          size: 0,
+          count: 0,
+          capturedAt: 0,
+          note: '这是按真实资源文件名识别出的整集；优先复制 manifest/m3u8 或合并命令。',
+        });
+      }
+      const group = groups.get(key);
+      group.items.push(item);
+      group.size += Number(item.size) || 0;
+      group.count += 1;
+      group.capturedAt = Math.max(group.capturedAt, item.capturedAt || 0);
+    });
+
+    return Array.from(groups.values()).map((group) => {
+      group.main = chooseMainResource(group);
+      const mainKind = group.main ? typeOf(group.main) : '';
+      if (group.main) {
+        group.kind = mainKind === 'audio' ? 'episode' : mainKind;
+        group.title = `${group.label} · ${group.main.filename || group.title}`;
+      }
+      const segments = group.items.filter(isSegment);
+      if (!group.main && segments.length >= 2) {
+        group.kind = 'segments';
+        group.items = segments;
+        const numbers = segments.map(item => item.segmentNumber).filter(n => Number.isFinite(n));
+        const min = numbers.length ? Math.min(...numbers) : 0;
+        const max = numbers.length ? Math.max(...numbers) : 0;
+        group.incomplete = min > 1 || (numbers.length && (max - min + 1 !== numbers.length));
+      }
+      return group;
+    }).sort((a, b) => a.episodeNo - b.episodeNo);
+  }
+
+  function buildEpisodes(list) {
+    const youtubeEpisodes = buildYoutubeGroups(list);
+    const trueEpisodes = buildTrueEpisodeGroups(list);
+    if (youtubeEpisodes.length || trueEpisodes.length) {
+      return youtubeEpisodes.concat(trueEpisodes).sort((a, b) => {
+        if (a.kind === 'youtube' && b.kind !== 'youtube') return -1;
+        if (b.kind === 'youtube' && a.kind !== 'youtube') return 1;
+        return (a.episodeNo || 0) - (b.episodeNo || 0);
+      });
+    }
+
+    const groups = new Map();
+    const hasManifest = list.some(item => typeOf(item) === 'm3u8' || typeOf(item) === 'mpd');
+
+    list.filter(isWholeMedia).forEach((item) => {
+      const kind = typeOf(item);
+      groups.set('whole:' + item.id, {
+        id: 'whole:' + item.id,
+        kind,
+        label: kind === 'm3u8' ? '清单' : kind === 'mpd' ? 'DASH' : '视频',
+        title: (kind === 'm3u8' ? '整集清单 · ' : kind === 'mpd' ? 'DASH 清单 · ' : '完整视频 · ') + (item.filename || item.ext || 'media'),
+        items: [item],
+        main: item,
+        size: item.size || 0,
+        count: 1,
+        capturedAt: item.capturedAt || 0,
+        note: kind === 'm3u8' || kind === 'mpd'
+          ? '这是整集播放清单，合成 MP4 时会按完整清单读取，优先使用它。'
+          : '这是一个完整媒体直链，可直接下载。',
+      });
+    });
+
+    list.filter(item => !hasManifest && isSegment(item)).forEach((item) => {
+      const seg = parseSegment(item);
+      if (!groups.has('seg:' + seg.key)) {
+        groups.set('seg:' + seg.key, {
+          id: 'seg:' + seg.key,
+          kind: 'segments',
+          label: '分片组',
+          title: '分片整集 · ' + (seg.prefix || 'episode') + '*' + seg.suffix,
+          items: [],
+          size: 0,
+          count: 0,
+          capturedAt: 0,
+          dirUrl: seg.dirUrl,
+          prefix: seg.prefix,
+          suffix: seg.suffix,
+          min: null,
+          max: null,
+          note: '未捕获到整集清单时，会把同一目录下连续 ts/m4s 分片整理成一集。',
+        });
+      }
+      const group = groups.get('seg:' + seg.key);
+      group.items.push({ ...item, segmentNumber: seg.number, segmentName: seg.name });
+      group.size += Number(item.size) || 0;
+      group.count += 1;
+      group.capturedAt = Math.max(group.capturedAt, item.capturedAt || 0);
+      if (seg.number) {
+        group.min = group.min == null ? seg.number : Math.min(group.min, seg.number);
+        group.max = group.max == null ? seg.number : Math.max(group.max, seg.number);
+      }
+    });
+
+    return Array.from(groups.values())
+      .filter(group => group.kind !== 'segments' || group.count >= 2)
+      .map(group => {
+      if (group.kind === 'segments') {
+        group.items.sort((a, b) => (a.segmentNumber || 0) - (b.segmentNumber || 0));
+        const range = group.min != null && group.max != null ? `#${group.min}-${group.max}` : `${group.count} 段`;
+        group.title = `分片整集 · ${group.prefix || 'episode'} ${range}`;
+        if (group.min > 1 || (group.max && group.min && group.max - group.min + 1 !== group.count)) {
+          group.incomplete = true;
+          group.note = '只抓到部分分片，不能保证完整内容；请等待整集 m3u8 出现，或点“获取全集”重新抓。';
+        }
+      }
+        return group;
+      })
+      .sort((a, b) => {
+        const rank = { m3u8: 0, mpd: 1, video: 2, segments: 3, audio: 4 };
+        return (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9) || (b.capturedAt || 0) - (a.capturedAt || 0);
+      });
+  }
+
+  function episodeFfmpeg(group) {
+    if (group.youtubePair) {
+      const video = group.youtubePair.video || null;
+      const audio = group.youtubePair.audio || null;
+      const output = cleanOutputName((group.title || 'youtube-video').replace(/^YouTube整集\s*[·.-]?\s*/i, ''), 'youtube-video') + '.mp4';
+      const headers = [];
+      const ref = (video && video.referer) || (audio && audio.referer) || '';
+      const ua = (video && video.userAgent) || (audio && audio.userAgent) || '';
+      if (ref) headers.push('Referer: ' + ref);
+      if (ua) headers.push('User-Agent: ' + ua);
+      const headerPart = headers.length ? `-headers ${JSON.stringify(headers.join('\\r\\n') + '\\r\\n')} ` : '';
+      const inputs = [
+        video && `-i ${JSON.stringify(normalizeYoutubePlaybackUrl(video.url))}`,
+        audio && `-i ${JSON.stringify(normalizeYoutubePlaybackUrl(audio.url))}`,
+      ].filter(Boolean).join(' ');
+      const maps = [
+        video && '-map 0:v:0?',
+        audio && (video ? '-map 1:a:0?' : '-map 0:a:0?'),
+      ].filter(Boolean).join(' ');
+      return `ffmpeg ${headerPart}${inputs} ${maps} -c copy ${JSON.stringify(output)}`;
+    }
+    if (group.main) {
+      const item = group.main;
+      const output = cleanOutputName((item.filename || 'episode').replace(/\.(m3u8|m3u|mpd)$/i, ''), 'episode') + '.mp4';
+      const headers = [];
+      if (item.referer) headers.push('Referer: ' + item.referer);
+      if (item.userAgent) headers.push('User-Agent: ' + item.userAgent);
+      const headerPart = headers.length ? `-headers ${JSON.stringify(headers.join('\\r\\n') + '\\r\\n')} ` : '';
+      return `ffmpeg ${headerPart}-i ${JSON.stringify(item.url)} -c copy ${JSON.stringify(output)}`;
+    }
+
+    const output = cleanOutputName((group.prefix || 'episode').replace(/[_-]$/, ''), 'episode') + '.mp4';
+    const lines = group.items.map(item => `file '${String(item.url).replace(/'/g, "'\\''")}'`).join('\n');
+    return [
+      '# 1. 把下面这些内容保存为 segments.txt',
+      lines,
+      '',
+      '# 2. 在 segments.txt 所在目录执行',
+      `ffmpeg -protocol_whitelist "file,http,https,tcp,tls,crypto" -f concat -safe 0 -i segments.txt -c copy ${JSON.stringify(output)}`,
+    ].join('\n');
+  }
+
+  function episodeLinkList(group) {
+    if (group.youtubePair) {
+      return [
+        group.youtubePair.video && ('视频流: ' + normalizeYoutubePlaybackUrl(group.youtubePair.video.url)),
+        group.youtubePair.audio && ('音频流: ' + normalizeYoutubePlaybackUrl(group.youtubePair.audio.url)),
+      ].filter(Boolean).join('\n');
+    }
+    return (group.main ? [group.main.url] : group.items.map(item => item.url)).join('\n');
+  }
+
+  // ========== 修改：mergePayloadFor 加入 customHeaders ==========
+  function mergePayloadFor(group) {
+    if (group.youtubePair) {
+      const video = group.youtubePair.video || null;
+      const audio = group.youtubePair.audio || null;
+      const ref = (video && video.referer) || (audio && audio.referer) || '';
+      const ua = (video && video.userAgent) || (audio && audio.userAgent) || '';
+      const baseName = cleanOutputName((group.title || 'youtube-video').replace(/^YouTube整集\s*[·.-]?\s*/i, ''), 'youtube-video');
+      return {
+        mode: 'dual',
+        filename: baseName + '.mp4',
+        title: group.title || baseName,
+        url: video ? normalizeYoutubePlaybackUrl(video.url) : '',
+        videoUrl: video ? normalizeYoutubePlaybackUrl(video.url) : '',
+        audioUrl: audio ? normalizeYoutubePlaybackUrl(audio.url) : '',
+        referer: ref,
+        userAgent: ua,
+        headers: customHeaders,
+      };
+    }
+    const main = group.main || null;
+    const baseName = cleanOutputName(
+      (group.label || group.title || (main && main.filename) || 'episode')
+        .replace(/\.(m3u8|m3u|mpd|ts|m4s|mp4)$/i, ''),
+      'episode'
+    );
+    const payload = {
+      mode: 'manifest',
+      filename: baseName + '.mp4',
+      title: group.title || baseName,
+      referer: main ? main.referer : '',
+      userAgent: main ? main.userAgent : '',
+      headers: customHeaders   // 增加自定义请求头
+    };
+    if (main) {
+      payload.url = main.url;
+    } else {
+      payload.mode = 'segments';
+      payload.urls = (group.items || []).map(item => item.url).filter(Boolean);
+      payload.incomplete = !!group.incomplete;
+      const first = group.items && group.items[0] ? group.items[0] : {};
+      payload.referer = first.referer || '';
+      payload.userAgent = first.userAgent || '';
+    }
+    return payload;
+  }
+
+  function outputFileForEpisode(group, episodeNo) {
+    const prefix = String(episodeNo).padStart(3, '0') + '-第' + episodeNo + '集';
+    let suffix = '';
+    const main = group.main || {};
+    const source = (group.title || main.filename || 'episode')
+      .replace(/^第\d+集\s*[·.-]?\s*/i, '')
+      .replace(/\.(m3u8|m3u|mpd|ts|m4s|mp4)$/i, '');
+    if (source && source !== 'episode') suffix = '-' + source;
+    const resMatch = source.match(/\b(1080p?|720p?|4k|2160p?)\b/i);
+    if (resMatch) suffix = '-' + resMatch[0].toLowerCase();
+    const final = prefix + suffix;
+    return cleanOutputName(final, prefix) + '.mp4';
+  }
+
+  function currentEpisodeGroups() {
+    return buildEpisodes(Array.from(resources.values()));
+  }
+
+  function findEpisodeGroup(episodeNo) {
+    const groups = currentEpisodeGroups();
+    return groups.find(group => group.episodeNo === episodeNo && group.main && !group.incomplete) ||
+           groups.find(group => group.episodeNo === episodeNo && !group.incomplete) ||
+           groups.find(group => group.episodeNo === episodeNo) ||
+           null;
+  }
+
+  function findEpisodeGroupByToken(episodeNo, token) {
+    if (!token) return findEpisodeGroup(episodeNo);
+    const groups = currentEpisodeGroups();
+    return groups.find(g =>
+      g.episodeNo === episodeNo &&
+      g.main &&
+      g.main.scanToken === token &&
+      !g.incomplete
+    ) || null;
+  }
+
+  async function waitForEpisodeGroup(episodeNo, timeoutMs) {
+    const started = Date.now();
+    while (!scanAbort && Date.now() - started < timeoutMs) {
+      render();
+      const group = findEpisodeGroup(episodeNo);
+      if (group && group.main && !group.incomplete) return group;
+      await sleep(700);
+    }
+    render();
+    if (scanAbort) return null;
+    return findEpisodeGroup(episodeNo);
+  }
+
+  function markNewResourcesForEpisode(episodeNo, sinceTs, token, beforeIds) {
+    tagCapturedResourcesForEpisode(episodeNo, sinceTs, token);
+    for (const item of resources.values()) {
+      if (beforeIds && beforeIds.has(item.id)) continue;
+      if (!item.scanEpisodeNo && !episodeNoOf(item) && (isWholeMedia(item) || isSegment(item))) {
+        item.scanEpisodeNo = episodeNo;
+        if (token) item.scanToken = token;
+      }
+    }
+    render();
+  }
+
+  function hasCapturedEpisodeResource(episodeNo, token) {
+    const exact = token ? findEpisodeGroupByToken(episodeNo, token) : null;
+    if (exact && exact.main && !exact.incomplete) return true;
+    const group = findEpisodeGroup(episodeNo);
+    return !!(group && group.main && !group.incomplete);
+  }
+
+  async function waitForEpisodeCapture(episodeNo, startedAt, token, beforeIds, timeoutMs) {
+    const ep = Number(episodeNo) || 0;
+    if (!ep) return false;
+    const limit = Number(timeoutMs) || EPISODE_CAPTURE_TIMEOUT_MS;
+    const started = Date.now();
+    let lastPlayAt = 0;
+    let lastLogAt = 0;
+
+    while (!scanAbort && Date.now() - started < limit) {
+      if (Date.now() - lastPlayAt > 4500) {
+        await safePlayerAction('play', 2200);
+        lastPlayAt = Date.now();
+      }
+      markNewResourcesForEpisode(ep, startedAt, token, beforeIds);
+      if (hasCapturedEpisodeResource(ep, token) || activeDownloadedEpisodes.has(ep)) return true;
+
+      if (Date.now() - lastLogAt > 10000) {
+        const left = Math.max(0, Math.ceil((limit - (Date.now() - started)) / 1000));
+        logTask(`第 ${ep} 集还没抓到整集资源，继续播放等待（最多再等 ${left} 秒）`);
+        lastLogAt = Date.now();
+      }
+      await sleep(1000);
+    }
+
+    markNewResourcesForEpisode(ep, startedAt, token, beforeIds);
+    return hasCapturedEpisodeResource(ep, token) || activeDownloadedEpisodes.has(ep);
+  }
+
+  // 两段式抓取：先用很短的窗口快速播放抓取，抓到就立刻返回；只有没抓到、且允许兜底时，
+  // 才延长播放继续等。两段共用同一个 startedAt / beforeIds，所以慢速段不会漏掉快速段里
+  // 已经冒出来的资源。options.quickOnly=true 时只做快速探测、不做长等待（用于“这条链接到底有没有视频”的试探）。
+  async function captureEpisodeSmart(episodeNo, startedAt, token, beforeIds, options) {
+    const ep = Number(episodeNo) || 0;
+    if (!ep) return false;
+    const quickMs = (options && options.quickMs) || QUICK_CAPTURE_TIMEOUT_MS;
+    const extendedMs = (options && options.extendedMs) || EXTENDED_CAPTURE_TIMEOUT_MS;
+    const allowExtended = !(options && options.quickOnly);
+
+    // 第一段：只播前几秒，抓到整集资源就收手
+    let captured = await waitForEpisodeCapture(ep, startedAt, token, beforeIds, quickMs);
+    if (captured || scanAbort || !allowExtended) return captured;
+
+    // 第二段：前几秒没抓到，延长播放继续等
+    logTask(`第 ${ep} 集前 ${Math.round(quickMs / 1000)} 秒没抓到，延长播放继续等（最多再等 ${Math.round(extendedMs / 1000)} 秒）`);
+    return await waitForEpisodeCapture(ep, startedAt, token, beforeIds, extendedMs);
+  }
+
+  async function openEpisodeForScan(episodeNo, baseUrl) {
+    const originalUrl = normalizeUrl(baseUrl || lastState.url || $('addressInput').value);
+    const urlHasEpisode = urlLooksEpisode(originalUrl);
+
+    if (urlHasEpisode) {
+      const url = buildEpisodeUrl(baseUrl, episodeNo);
+      if (url) {
+        const result = await api.navigate(url);
+        if (result && result.ok) return { ok: true, method: 'url' };
+      }
+    }
+
+    if (api.openEpisode) {
+      const opened = await api.openEpisode(episodeNo);
+      if (opened && opened.ok) {
+        if (opened.current && opened.current !== episodeNo) {
+          return { ok: false, error: `网页显示当前是第 ${opened.current} 集，不是第 ${episodeNo} 集` };
+        }
+        return opened;
+      }
+      if (!urlHasEpisode) {
+        return { ok: false, error: opened && opened.error ? opened.error : '网页控件切集失败，且当前网址没有可替换的集数参数' };
+      }
+      setStatus(`网页控件切到第 ${episodeNo} 集失败，尝试备用链接方式…`, 'error');
+    }
+    const url = buildEpisodeUrl(baseUrl, episodeNo);
+    if (!url) return { ok: false, error: '无法生成第 ' + episodeNo + ' 集链接' };
+    const result = await api.navigate(url);
+    return result && result.ok ? { ok: true, method: 'url' } : (result || { ok: false, error: '访问失败' });
+  }
+
+  function waitForMerge(jobId) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        mergeWaiters.delete(jobId);
+        reject(new Error('合成超时'));
+      }, 1000 * 60 * 90);
+      mergeWaiters.set(jobId, {
+        resolve: (info) => { clearTimeout(timer); resolve(info); },
+        reject: (err) => { clearTimeout(timer); reject(err); },
+      });
+    });
+  }
+
+  async function deleteIncompleteOutput(filePath) {
+    if (!filePath || !api.deleteFile) return;
+    try { await api.deleteFile(filePath); } catch (e) {}
+  }
+
+  // ========== 修改：带重试的合成函数，每次重试前检查 scanAbort ==========
+  async function mergeEpisodeToDir(group, dir, episodeNo, retries = 3) {
+    if (!group || group.incomplete) throw new Error('第 ' + episodeNo + ' 集资源不完整，已跳过');
+    const payload = mergePayloadFor(group);
+    payload.outputPath = joinPath(dir, outputFileForEpisode(group, episodeNo));
+    
+    let lastError = null;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      if (scanAbort) throw new Error('任务已停止');
+      try {
+        const started = await api.mergeMp4(payload);
+        if (!started || !started.ok) throw new Error(started && started.error ? started.error : '合成任务启动失败');
+        await waitForMerge(started.jobId);
+        return payload.outputPath;
+      } catch (err) {
+        lastError = err;
+        logTask(`第 ${episodeNo} 集合成失败 (尝试 ${attempt}/${retries})：${err.message}`);
+        if (attempt < retries) await sleep(3000);
+      }
+    }
+    throw new Error(`第 ${episodeNo} 集合成失败，已重试 ${retries} 次：${lastError?.message || '未知错误'}`);
+  }
+
+  function renderEpisodeGroups(list) {
+    const episodes = buildEpisodes(list);
+    episodeGroups.clear();
+    episodes.forEach(group => episodeGroups.set(group.id, group));
+    const realEpisodeCount = episodes.filter(group => group.episodeNo).length;
+    $('resourceCount').textContent = realEpisodeCount
+      ? `${realEpisodeCount} 集 / ${episodes.length} 组 / ${list.length} 条`
+      : `${episodes.length} 组 / ${list.length} 条`;
+
+    if (!episodes.length) {
+      $('resourceList').innerHTML = '<div class="empty">还没整理出整集资源。先播放视频几秒，或切到“全部”查看原始请求。</div>';
+      return;
+    }
+
+    const epNos = episodes.map(g => g.episodeNo).filter(Boolean).sort((a, b) => a - b);
+    let banner = '';
+    if (epNos.length) {
+      const min = epNos[0];
+      const max = epNos[epNos.length - 1];
+      const missing = [];
+      for (let i = min; i <= max; i++) if (!epNos.includes(i)) missing.push(i);
+      const incompleteNos = episodes.filter(g => g.episodeNo && g.incomplete).map(g => g.episodeNo);
+      const parts = [`已整理第 ${min}–${max} 集`];
+      if (missing.length) parts.push(`缺第 ${missing.join('、')} 集（去网页把这些集播一下，或点“获取全集”）`);
+      if (incompleteNos.length) parts.push(`第 ${incompleteNos.join('、')} 集只抓到部分分片，时长可能缺，先别合成`);
+      banner = `<div class="episode-note" style="margin:2px 0 8px;color:var(--vermillion-d);font-weight:600">${escapeAttr(parts.join('；'))}</div>`;
+    }
+
+    $('resourceList').innerHTML = banner + episodes.map((group, index) => {
+      const title = escapeAttr(group.title || '整集资源');
+      const kind = escapeAttr(group.kind === 'segments' ? '分片' : group.kind);
+      const primary = group.main ? group.main : group.items[0];
+      const url = escapeAttr(group.main ? group.main.url : (group.dirUrl || primary.url || ''));
+      const meta = group.kind === 'segments'
+        ? `${group.count} 个分片 · 合计 ${formatSize(group.size)}`
+        : `${group.count || 1} 条资源 · ${formatSize(group.size)} · ${(primary.mime || primary.ext || 'media')}`;
+      const canDownload = !!group.main && group.kind !== 'youtube' && typeOf(group.main) !== 'm3u8' && typeOf(group.main) !== 'mpd';
+      const label = escapeAttr(group.label || (group.episodeNo ? `第${group.episodeNo}集` : '资源组'));
+      return `
+        <div class="episode" data-episode-id="${escapeAttr(group.id)}">
+          <div class="item-top">
+            <span class="badge">${label}</span>
+            <span class="name" title="${title}">${title}</span>
+          </div>
+          <div class="meta">${kind} · ${escapeAttr(meta)}</div>
+          <div class="url">${url}</div>
+          <div class="episode-note">${escapeAttr(group.note || '')}</div>
+          <div class="actions">
+            <button class="action" type="button" data-act="copy-episode">复制整集链接</button>
+            <button class="action" type="button" data-act="merge-mp4">${group.incomplete ? '分片不完整' : '合成MP4'}</button>
+            <button class="action" type="button" data-act="ffmpeg">复制合并命令</button>
+            ${group.main ? '<button class="action" type="button" data-act="open-episode">打开</button>' : ''}
+            ${canDownload ? '<button class="action" type="button" data-act="download-episode">下载文件</button>' : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function render() {
+    const list = Array.from(resources.values())
+      .sort((a, b) => (b.capturedAt || 0) - (a.capturedAt || 0));
+
+    if (activeFilter === 'episode') {
+      renderEpisodeGroups(list);
+      return;
+    }
+
+    const filtered = list.filter(passesFilter);
+    $('resourceCount').textContent = list.length + ' 条';
+
+    if (!filtered.length) {
+      $('resourceList').innerHTML = '<div class="empty">暂无匹配资源</div>';
+      return;
+    }
+
+    $('resourceList').innerHTML = filtered.map((item) => {
+      const ext = escapeAttr(item.ext || typeOf(item));
+      const name = escapeAttr(item.filename || item.url);
+      const mime = escapeAttr(item.mime || item.resourceType || 'media');
+      const url = escapeAttr(item.url);
+      const status = item.statusCode ? 'HTTP ' + item.statusCode + ' · ' : '';
+      return `
+        <div class="item" data-id="${escapeAttr(item.id)}">
+          <div class="item-top">
+            <span class="badge">${ext}</span>
+            <span class="name" title="${name}">${name}</span>
+          </div>
+          <div class="meta">${status}${formatSize(item.size)} · ${mime}</div>
+          <div class="url">${url}</div>
+          <div class="actions">
+            <button class="action" type="button" data-act="copy">复制链接</button>
+            <button class="action" type="button" data-act="curl">复制 curl</button>
+            <button class="action" type="button" data-act="open">打开</button>
+            <button class="action" type="button" data-act="download">下载文件</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function syncBounds() {
+    if (!api || !api.setViewBounds) return;
+    if (inputModalOpen) {
+      await parkBrowserViewForModal();
+      return;
+    }
+    const rect = $('browserSlot').getBoundingClientRect();
+    await api.setViewBounds({
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    });
+  }
+
+  function updateBrowserState(state) {
+    lastState = { ...lastState, ...state };
+    if (lastState.url) $('addressInput').value = lastState.url;
+    $('pageTitle').textContent = lastState.title || lastState.url || 'about:blank';
+    $('backBtn').disabled = !lastState.canGoBack;
+    $('forwardBtn').disabled = !lastState.canGoForward;
+    $('browserHead').classList.toggle('loading', !!lastState.isLoading);
+    if (state && state.isLoading === false && loadingWaiters.length) {
+      const waiters = loadingWaiters.slice();
+      loadingWaiters = [];
+      waiters.forEach(fn => fn());
+    }
+    if (lastState.error) setStatus('页面加载失败: ' + lastState.error, 'error');
+  }
+
+  function setScanUi(running) {
+    scanRunning = running;
+    $('scanAllBtn').textContent = running ? '停止' : '获取全集';
+    $('downloadAllBtn').textContent = running ? '停止' : '下载全集';
+    $('scanAllBtn').classList.toggle('primary', running);
+    $('clearBtn').disabled = running;
+    $('chooseDirBtn').disabled = running;
+    $('importLinksBtn').disabled = running;
+    updateRetryUi();
+  }
+
+  function generateEpisodesFromTemplate(tpl, start, end) {
+    const existingUrls = new Set(Array.from(resources.values()).map(it => it.url));
+    let added = 0;
+    for (let ep = start; ep <= end; ep++) {
+      const url = tpl.make(ep);
+      if (existingUrls.has(url)) continue;
+      let file;
+      try { file = decodeURIComponent(url.split('?')[0].split('/').pop()); } catch { file = ep + '_.m3u8'; }
+      resources.set('tpl:' + url, {
+        id: 'tpl:' + url,
+        url,
+        ext: 'm3u8',
+        mime: 'application/vnd.apple.mpegurl',
+        filename: file || (ep + '_.m3u8'),
+        size: 0,
+        referer: tpl.referer || '',
+        userAgent: tpl.userAgent || '',
+        capturedAt: Date.now() + ep,
+        synthetic: true,
+      });
+      existingUrls.add(url);
+      added++;
+    }
+    render();
+    return added;
+  }
+
+  async function extractFromPageHtml() {
+    if (!api || !api.extractPageMedia) return 0;
+    const pageUrl = normalizeUrl(lastState.url || $('addressInput').value);
+    if (!pageUrl) return 0;
+    setStatus('正在从页面源码里抠全集地址…');
+    let res = null;
+    try { res = await withTimeout(api.extractPageMedia(pageUrl), 12000, null); } catch (e) { return 0; }
+    if (!res || !res.ok || !Array.isArray(res.urls) || !res.urls.length) return 0;
+
+    const byEpisode = new Map();
+    for (const url of res.urls) {
+      const ep = extractResourceEpisodeNo(url);
+      if (!ep || byEpisode.has(ep)) continue;
+      byEpisode.set(ep, url);
+    }
+    if (byEpisode.size < 2 && !(Number(res.total) >= 2 && byEpisode.size >= 1)) return 0;
+
+    const existingUrls = new Set(Array.from(resources.values()).map(it => it.url));
+    for (const [ep, url] of Array.from(byEpisode.entries()).sort((a, b) => a[0] - b[0])) {
+      if (existingUrls.has(url)) continue;
+      let file;
+      try { file = decodeURIComponent(url.split('?')[0].split('/').pop()); } catch { file = ep + '_.m3u8'; }
+      resources.set('page:' + url, {
+        id: 'page:' + url,
+        url,
+        ext: 'm3u8',
+        mime: 'application/vnd.apple.mpegurl',
+        filename: file || (ep + '_.m3u8'),
+        size: 0,
+        referer: pageUrl,
+        userAgent: '',
+        capturedAt: Date.now() + ep,
+        synthetic: true,
+        scanEpisodeNo: ep,
+      });
+      existingUrls.add(url);
+    }
+    render();
+    return byEpisode.size;
+  }
+
+  async function scanEpisodeRange() {
+    if (scanRunning) {
+      await requestStop('正在停止扫描和合成任务…');
+      return;
+    }
+
+    const grabbed = await extractFromPageHtml();
+    if (grabbed >= 2) {
+      logTask(`已直接从页面抠出 ${grabbed} 集地址，无需播放/翻页。可直接点「下载全集」`, 'replace');
+      setStatus(`已列出 ${grabbed} 集，可点「下载全集」`);
+      return;
+    }
+
+    const tpl = deriveEpisodeTemplate();
+    if (tpl) {
+      const inferred = await inferEpisodeRange();
+      let start = inferred.start;
+      let end = inferred.end;
+      const rangeText = await askInput(
+        '已识别到文件名规律（样本第 ' + tpl.sampleEp + ' 集）。\n' +
+        '要一次性列出第几集到第几集？例如 1-71；只填 71 代表 1-71。\n' +
+        '（带锁的付费集也会列出来，但下载会失败，建议只列没锁的）',
+        `1-${end}`
+      );
+      if (rangeText == null) { setStatus('已取消'); return; }
+      ({ start, end } = parseRange(rangeText, inferred.current));
+      if (!start || !end || end < start) { setStatus('集数范围不正确', 'error'); return; }
+      const added = generateEpisodesFromTemplate(tpl, start, end);
+      logTask(`按文件名规律列出第 ${start}-${end} 集（新增 ${added} 集），无需逐集播放。可直接点「下载全集」`, 'replace');
+      setStatus(`已列出第 ${start}-${end} 集，可点「下载全集」或逐集合成`);
+      return;
+    }
+
+    await autoAdvanceScan();
+  }
+
+  async function autoAdvanceScan() {
+    const fastScan = isFastScanEnabled();
+    const captureTimeout = fastScan ? FAST_EPISODE_CAPTURE_TIMEOUT_MS : EPISODE_CAPTURE_TIMEOUT_MS;
+    const pageIdleMs = fastScan ? FAST_PAGE_IDLE_MS : 9000;
+    setStatus('正在读取网页里的集数列表…');
+    logTask('读取网页集数列表中…', 'replace');
+    let listRes = null;
+    try { listRes = await api.episodeList(); } catch (e) {}
+    const episodes = (listRes && listRes.ok && Array.isArray(listRes.episodes)) ? listRes.episodes : [];
+
+    if (episodes.length) {
+      const first = episodes[0].episode;
+      const last = episodes[episodes.length - 1].episode;
+      const capText = await askInput(
+        `从网页读到 ${episodes.length} 集（第 ${first}-${last} 集）。\n要抓到第几集？（直接确定=抓到第 ${last} 集；带锁的付费集会抓不到然后跳过）`,
+        `${last}`
+      );
+      if (capText == null) { setStatus('已取消'); return; }
+      const cap = parseInt(capText, 10) || last;
+      const todo = episodes.filter(e => e.episode <= cap);
+
+      scanAbort = false;
+      setScanUi(true);
+      logTask(`按网页列表抓取，共 ${todo.length} 集`, 'replace');
+      if (fastScan) logTask(`快速模式已开启：每集最多等待 ${Math.round(captureTimeout / 1000)} 秒，抓到资源就切下一集`);
+      let got = 0, emptyStreak = 0;
+      try {
+        for (let i = 0; i < todo.length; i++) {
+          if (scanAbort) break;
+          const { episode, url } = todo[i];
+          const beforeIds = new Set(Array.from(resources.keys()));
+          const startedAt = Date.now();
+          const token = `manual-list-${episode}-${startedAt}`;
+          activeScanEpisodeNo = episode;
+          activeScanToken = token;
+          logTask(`第 ${episode} 集：打开并播放抓取… (${i + 1}/${todo.length})`);
+          try {
+            if (url) { await api.navigate(url); await waitForPageIdle(QUICK_PAGE_IDLE_MS); }
+            const verified = await waitForManualVerificationIfNeeded(`第 ${episode} 集`);
+            const captured = verified && await captureEpisodeSmart(episode, startedAt, token, beforeIds);
+            if (captured) { got++; emptyStreak = 0; }
+            else { emptyStreak++; logTask(`第 ${episode} 集没抓到（多半是付费锁集，跳过）`); }
+          } finally {
+            activeScanEpisodeNo = 0;
+            activeScanToken = '';
+          }
+          if (emptyStreak >= 3) { logTask('连续三集抓不到资源，停止当前链接'); break; }
+        }
+        logTask(scanAbort ? `已停止 · 抓到 ${got} 集` : `按列表抓取完成 · 抓到 ${got} 集`);
+      } catch (err) {
+        logTask('抓取出错：' + (err && err.message ? err.message : err));
+      } finally {
+        scanAbort = false;
+        setScanUi(false);
+      }
+      const eps = currentEpisodeGroups().filter(g => g.episodeNo).length;
+      setStatus(`已整理 ${eps} 集，点「下载全集」逐集合成`);
+      return;
+    }
+
+    logTask('没从网页读到集数列表，改用逐集切换方式…');
+    const baseUrl = lastState.url || $('addressInput').value;
+    const urlHasEpisode = urlLooksEpisode(baseUrl);
+
+    const capText = await askInput(
+      (fastScan
+        ? '快速巡航抓全集：从第 1 集开始，每集只短暂播放等待，抓到整集资源就切下一集。\n'
+        : '自动巡航抓全集：从第 1 集开始，每集会持续播放等待，抓到整集资源后再切下一集。\n') +
+      '最多抓到第几集？（不确定就填大点，比如 200；到结尾会自动停）',
+      '200'
+    );
+    if (capText == null) { setStatus('已取消'); return; }
+    const cap = Math.min(Math.max(parseInt(capText, 10) || 0, 1), 1000);
+    if (!cap) { setStatus('数量不正确', 'error'); return; }
+
+    scanAbort = false;
+    setScanUi(true);
+    logTask('自动巡航开始…', 'replace');
+    if (fastScan) logTask(`快速模式已开启：每集最多等待 ${Math.round(captureTimeout / 1000)} 秒`);
+    await safePlayerAction('open-panel', 1800);
+    if (urlHasEpisode) {
+      await api.navigate(buildEpisodeUrl(baseUrl, 1));
+      await waitForPageIdle(QUICK_PAGE_IDLE_MS);
+    }
+
+    let emptyStreak = 0;
+    try {
+      for (let ep = 1; ep <= cap; ep++) {
+        if (scanAbort) break;
+        const beforeIds = new Set(Array.from(resources.keys()));
+        const startedAt = Date.now();
+        const token = `manual-cruise-${ep}-${startedAt}`;
+        activeScanEpisodeNo = ep;
+        activeScanToken = token;
+        logTask(`第 ${ep} 集：播放抓取中… (${ep}/${cap})`);
+        let captured = false;
+        try {
+          const verified = await waitForManualVerificationIfNeeded(`第 ${ep} 集`);
+          captured = verified && await captureEpisodeSmart(ep, startedAt, token, beforeIds);
+        } finally {
+          activeScanEpisodeNo = 0;
+          activeScanToken = '';
+        }
+
+        if (captured) emptyStreak = 0;
+        else { emptyStreak++; logTask(`第 ${ep} 集没抓到新地址`); }
+        if (emptyStreak >= 3) { logTask('连续三集没抓到资源，停止当前链接'); break; }
+        if (ep >= cap) break;
+
+        if (urlHasEpisode) {
+          await api.navigate(buildEpisodeUrl(baseUrl, ep + 1));
+          await waitForPageIdle(QUICK_PAGE_IDLE_MS);
+        } else {
+          let r = {};
+          r = await safePlayerAction('next', 2200) || {};
+          await sleep(fastScan ? 1200 : 2500);
+          if (!r.ok) { logTask('找不到“下一集”控件，停止'); break; }
+        }
+      }
+    } catch (err) {
+      logTask('自动巡航出错：' + (err && err.message ? err.message : err));
+    } finally {
+      scanAbort = false;
+      setScanUi(false);
+    }
+    const eps2 = currentEpisodeGroups().filter(g => g.episodeNo).length;
+    logTask(`自动巡航结束 · 已整理 ${eps2} 集。点「下载全集」逐集合成`);
+    setStatus(`自动巡航结束，已整理 ${eps2} 集`);
+  }
+
+  function readyEpisodeGroups() {
+    return currentEpisodeGroups()
+      .filter(g => g.episodeNo && g.main && !g.incomplete)
+      .sort((a, b) => a.episodeNo - b.episodeNo);
+  }
+
+  async function clearCapturedResources() {
+    resources.clear();
+    episodeGroups.clear();
+    render();
+    await api.clear();
+  }
+
+  // 公共函数：确保第1集被尝试抓取，并把新资源明确标记为第1集
+  async function ensureFirstEpisode(currentUrl, saveDir, options) {
+    const fastScan = isFastScanEnabled(options);
+    const firstEpisodeGroup = findEpisodeGroup(1);
+    if (firstEpisodeGroup && firstEpisodeGroup.main && !firstEpisodeGroup.incomplete) {
+      if (saveDir && !activeDownloadedEpisodes.has(1)) {
+        downloadEpisodeImmediately(1, saveDir, '').catch(err => {
+          logTask(`第 1 集即时保存失败：${err && err.message ? err.message : err}`);
+        });
+      }
+      return true;
+    }
+    if (scanAbort) return false;
+
+    logTask('第 1 集尚未抓到资源，尝试重新抓取第 1 集...');
+    const originalUrl = normalizeUrl(lastState.url || $('addressInput').value);
+    const firstSourceUrl = normalizeUrl(currentUrl || originalUrl);
+    const firstUrl = buildEpisodeUrl(firstSourceUrl, 1);
+
+    const startedAt = Date.now();
+    const token = `ensure-first-${startedAt}`;
+    const beforeIds = new Set(Array.from(resources.keys()));
+    activeScanEpisodeNo = 1;
+    activeScanToken = token;
+
+    try {
+      if (firstUrl) {
+        await api.navigate(firstUrl);
+      } else {
+        const opened = await openEpisodeForScan(1, firstSourceUrl || originalUrl);
+        if (!opened || !opened.ok) {
+          logTask(`第 1 集补抓切集失败：${opened && opened.error ? opened.error : '没有可用切集控件'}`);
+          return false;
+        }
+      }
+      await waitForPageIdle(QUICK_PAGE_IDLE_MS);
+      const verified = await waitForManualVerificationIfNeeded('第 1 集补抓');
+      if (!verified) return false;
+      await captureEpisodeSmart(1, startedAt, token, beforeIds);
+
+      const group = findEpisodeGroupByToken(1, token) || findEpisodeGroup(1);
+      if (group && group.main && !group.incomplete) {
+        logTask('第 1 集补抓成功');
+        if (saveDir && !activeDownloadedEpisodes.has(1)) {
+          downloadEpisodeImmediately(1, saveDir, token).catch(err => {
+            logTask(`第 1 集补抓后即时保存失败：${err && err.message ? err.message : err}`);
+          });
+        }
+        return true;
+      }
+      logTask('第 1 集补抓后仍未识别到可保存的整集资源');
+      return false;
+    } finally {
+      activeScanEpisodeNo = 0;
+      activeScanToken = '';
+      if (!scanAbort && firstUrl && originalUrl && normalizeUrl(originalUrl) !== normalizeUrl(firstUrl)) {
+        try {
+          await api.navigate(originalUrl);
+          await waitForPageIdle(fastScan ? 2000 : 5000);
+        } catch (e) {}
+      }
+    }
+  }
+
+  function hasReadyEpisode(ep) {
+    const group = findEpisodeGroup(ep);
+    return !!(group && group.main && !group.incomplete);
+  }
+
+  function shouldForceFirstEpisodeRetry() {
+    return !activeDownloadedEpisodes.has(1) && hasReadyEpisode(2) && hasReadyEpisode(3);
+  }
+
+  async function waitForEpisodeSaved(ep, timeoutMs) {
+    const started = Date.now();
+    while (!scanAbort && !activeDownloadedEpisodes.has(ep) && Date.now() - started < timeoutMs) {
+      const job = backgroundJobs.get(ep);
+      if (job && typeof job.then === 'function') {
+        await Promise.race([job.catch(() => false), sleep(1000)]);
+      } else {
+        await sleep(1000);
+      }
+    }
+    return activeDownloadedEpisodes.has(ep);
+  }
+
+  async function retryFirstEpisodeUntilSaved(currentUrl, saveDir, reason) {
+    if (!saveDir || activeDownloadedEpisodes.has(1)) return true;
+    if (!shouldForceFirstEpisodeRetry()) return false;
+    if (firstEpisodeRetryPromise) return firstEpisodeRetryPromise;
+
+    firstEpisodeRetryPromise = (async () => {
+      let attempt = 0;
+      while (!scanAbort && !activeDownloadedEpisodes.has(1)) {
+        attempt++;
+        const message = `${reason || '检测到首集缺失'}：第 2、3 集已拿到，但第 1 集缺失，强制重试第 1 集（第 ${attempt} 次）`;
+        logTask(message);
+        setStatus(message);
+
+        await ensureFirstEpisode(currentUrl || lastState.url || $('addressInput').value, saveDir);
+        if (await waitForEpisodeSaved(1, 70000)) break;
+
+        const group = findEpisodeGroup(1);
+        if (group && group.main && !group.incomplete) {
+          logTask('第 1 集资源已识别但未保存成功，重新合成保存第 1 集...');
+          await downloadEpisodeImmediately(1, saveDir, '');
+          if (await waitForEpisodeSaved(1, 70000)) break;
+        }
+
+        if (!scanAbort && !activeDownloadedEpisodes.has(1)) {
+          logTask('第 1 集仍未保存成功，继续重试，不跳过首集');
+          await sleep(Math.min(15000, 4000 + attempt * 1000));
+        }
+      }
+
+      if (activeDownloadedEpisodes.has(1)) {
+        logTask('第 1 集已补抓并保存成功');
+        return true;
+      }
+      logTask('第 1 集补抓已停止');
+      return false;
+    })();
+
+    try {
+      return await firstEpisodeRetryPromise;
+    } finally {
+      firstEpisodeRetryPromise = null;
+    }
+  }
+
+  async function downloadEpisodeImmediately(episodeNo, dir, token) {
+    const ep = Number(episodeNo) || 0;
+    if (!ep || !dir) return false;
+    if (activeDownloadedEpisodes.has(ep)) return true;
+    if (backgroundJobs.has(ep)) {
+      return backgroundJobs.get(ep);
+    }
+    if (downloadingEpisodes.has(ep)) return false;
+
+    downloadingEpisodes.add(ep);
+    const jobPromise = (async () => {
+      try {
+        let group = null;
+        for (let attempt = 0; attempt < 15; attempt++) {
+          group = findEpisodeGroupByToken(ep, token);
+          if (group && group.main && !group.incomplete) break;
+          await sleep(1000);
+        }
+        if ((!group || !group.main || group.incomplete) && token) {
+          const fallbackGroup = findEpisodeGroup(ep);
+          if (fallbackGroup && fallbackGroup.main && !fallbackGroup.incomplete) {
+            group = fallbackGroup;
+            logTask(`第 ${ep} 集未找到本轮新资源，改用已整理好的第 ${ep} 集资源保存`);
+          }
+        }
+        if (!group || !group.main || group.incomplete) {
+          logTask(`第 ${ep} 集资源未在等待时间内出现，跳过`);
+          return false;
+        }
+        await mergeEpisodeToDir(group, dir, ep, 3);
+        activeDownloadedEpisodes.add(ep);
+        logTask(`第 ${ep} 集即时保存成功`);
+        await saveDramaSourceDocument(dir, { note: `第 ${ep} 集保存成功后自动更新` });
+        return true;
+      } catch (err) {
+        logTask(`第 ${ep} 集即时保存失败：${err && err.message ? err.message : err}`);
+        return false;
+      } finally {
+        downloadingEpisodes.delete(ep);
+        backgroundJobs.delete(ep);
+      }
+    })();
+    backgroundJobs.set(ep, jobPromise);
+    backgroundPromises.push(jobPromise);
+    return jobPromise;
+  }
+
+  async function collectEpisodeListForBatch(maxEpisodes, options) {
+    if (!api.episodeList) return 0;
+    let listRes = null;
+    try { listRes = await api.episodeList(); } catch (e) {}
+    const limit = Math.max(1, Number(maxEpisodes) || 200);
+    const baseEpisodeUrl = normalizeUrl($('addressInput').value || lastState.url);
+    let episodes = (listRes && listRes.ok && Array.isArray(listRes.episodes)) ? listRes.episodes : [];
+    if (!episodes.length && urlLooksEpisode(baseEpisodeUrl)) {
+      episodes = Array.from({ length: limit }, (_v, idx) => {
+        const ep = idx + 1;
+        return { episode: ep, url: buildEpisodeUrl(baseEpisodeUrl, ep), text: '按链接规律生成' };
+      });
+      logTask(`网页没有返回选集列表，已按链接规律从第 1 集生成最多 ${limit} 集的抓取队列`);
+    }
+    if (!episodes.length) {
+      const fallbackCount = 3;
+      episodes = Array.from({ length: fallbackCount }, (_v, idx) => ({
+        episode: idx + 1,
+        url: buildEpisodeUrl(baseEpisodeUrl, idx + 1),
+        text: '无选集列表，尝试网页控件切集',
+        quickProbe: true,
+      }));
+      logTask(`页面没有返回选集列表，先尝试切第 1-${fallbackCount} 集判断是否有视频内容`);
+    }
+
+    const downloadAsReady = !!(options && options.downloadAsReady);
+    const streamDir = options && options.downloadDir ? options.downloadDir : '';
+    const fastScan = isFastScanEnabled(options);
+    const normalCaptureTimeout = fastScan ? FAST_EPISODE_CAPTURE_TIMEOUT_MS : EPISODE_CAPTURE_TIMEOUT_MS;
+    const quickCaptureTimeout = fastScan ? Math.min(QUICK_PROBE_CAPTURE_TIMEOUT_MS, FAST_EPISODE_CAPTURE_TIMEOUT_MS) : QUICK_PROBE_CAPTURE_TIMEOUT_MS;
+    const pageIdleMs = fastScan ? FAST_PAGE_IDLE_MS : 10000;
+    const noUrlPageIdleMs = fastScan ? FAST_NO_URL_PAGE_IDLE_MS : 8000;
+    const byEpisode = new Map();
+    episodes.filter(e => e && e.episode).forEach(entry => {
+      const entryUrl = isOpaqueHashPlayerUrl(entry.url) ? '' : (entry.url || '');
+      const ep = extractEpisodeNo(entryUrl) || Number(entry.episode);
+      if (!ep) return;
+      const fixedUrl = urlLooksEpisode(baseEpisodeUrl) ? buildEpisodeUrl(baseEpisodeUrl, ep) : entryUrl;
+      byEpisode.set(ep, { ...entry, episode: ep, url: fixedUrl });
+    });
+    if (urlLooksEpisode(baseEpisodeUrl) && !byEpisode.has(1)) {
+      byEpisode.set(1, {
+        episode: 1,
+        url: buildEpisodeUrl(baseEpisodeUrl, 1),
+        text: '自动补入第1集',
+      });
+      logTask('网页选集列表没有返回第 1 集，已按当前链接规则自动补入第 1 集');
+    } else if (isOpaqueHashPlayerUrl(baseEpisodeUrl) && !byEpisode.has(1)) {
+      byEpisode.set(1, {
+        episode: 1,
+        url: '',
+        text: 'hash播放器自动补入第1集',
+      });
+      logTask('hash 播放器选集列表没有返回第 1 集，已改用网页按钮自动补入第 1 集');
+    }
+    const todo = Array.from(byEpisode.values())
+      .filter(e => e && e.episode)
+      .sort((a, b) => Number(a.episode) - Number(b.episode))
+      .slice(0, limit);
+    let got = 0;
+    if (fastScan) {
+      logTask(`快速模式已开启：每集最多等待 ${Math.round(normalCaptureTimeout / 1000)} 秒，抓到资源就切下一集，下载合成在后台继续`);
+    }
+
+    async function captureOne(entry, indexLabel) {
+      if (scanAbort) return false;
+      const url = isOpaqueHashPlayerUrl(entry.url) ? '' : (entry.url || '');
+      const episode = extractEpisodeNo(url) || Number(entry.episode);
+      if (!episode) return false;
+      const beforeReady = readyEpisodeGroups().length;
+      const startedAt = Date.now();
+      const beforeIds = new Set(Array.from(resources.keys()));
+      const scanToken = `${episode}-${Date.now()}`;
+      let captured = false;
+      activeScanEpisodeNo = episode;
+      activeScanToken = scanToken;
+      logTask(`批量抓取 · 第 ${episode} 集：打开并播放 (${indexLabel}) token=${scanToken}`);
+      try {
+        if (url) {
+          await api.navigate(url);
+          await waitForPageIdle(QUICK_PAGE_IDLE_MS);
+          const verified = await waitForManualVerificationIfNeeded(`第 ${episode} 集`);
+          if (!verified) return false;
+        } else {
+          const opened = await openEpisodeForScan(episode, lastState.url || $('addressInput').value);
+          if (!opened || !opened.ok) {
+              logTask(`批量抓取 · 第 ${episode} 集切集失败：${opened && opened.error ? opened.error : '没有可用切集控件'}`);
+            }
+          await waitForPageIdle(QUICK_PAGE_IDLE_MS);
+          const verified = await waitForManualVerificationIfNeeded(`第 ${episode} 集`);
+          if (!verified) return false;
+        }
+        captured = await captureEpisodeSmart(episode, startedAt, scanToken, beforeIds, {
+          quickOnly: !!entry.quickProbe,
+        });
+        if (!captured) logTask(`批量抓取 · 第 ${episode} 集在等待时间内没有出现整集资源`);
+      } finally {
+        activeScanEpisodeNo = 0;
+        activeScanToken = '';
+      }
+      const changed = captured || readyEpisodeGroups().length > beforeReady;
+      if (downloadAsReady) {
+        if (!changed) return false;
+        const saveTask = downloadEpisodeImmediately(episode, streamDir, scanToken);
+        if (fastScan) {
+          logTask(`第 ${episode} 集已进入后台保存，快速切下一集`);
+          saveTask.catch(err => {
+            logTask(`第 ${episode} 集后台保存异常：${err && err.message ? err.message : err}`);
+          });
+          return true;
+        }
+        const saved = await saveTask;
+        if (!saved) {
+          logTask(`第 ${episode} 集保存失败，不切下一集`);
+          if (options) options.haltOnIncompleteEpisode = episode;
+        }
+        return !!saved || activeDownloadedEpisodes.has(episode);
+      }
+      return changed || activeDownloadedEpisodes.has(episode);
+    }
+
+    let emptyStreak = 0;
+    for (let i = 0; i < todo.length; i++) {
+      if (scanAbort) break;
+
+      const entry = todo[i];
+      const changed = await captureOne(entry, `${i + 1}/${todo.length}`);
+      const entryEpisode = Number(entry.episode) || extractEpisodeNo(entry.url) || 0;
+      if (scanAbort) break;
+      if (options && options.haltOnIncompleteEpisode) {
+        logTask(`第 ${options.haltOnIncompleteEpisode} 集保存失败，已停止继续切集`);
+        break;
+      }
+      if (changed) {
+        got++;
+        emptyStreak = 0;
+        if (downloadAsReady && entryEpisode >= 3 && shouldForceFirstEpisodeRetry()) {
+          const retryTask = retryFirstEpisodeUntilSaved(baseEpisodeUrl || entry.url, streamDir, '首集补漏触发');
+          if (fastScan) {
+            retryTask.catch(err => logTask(`首集后台补漏异常：${err && err.message ? err.message : err}`));
+          } else {
+            await retryTask;
+            if (scanAbort) break;
+          }
+        }
+        continue;
+      }
+
+      emptyStreak++;
+      logTask(`批量抓取 · 第 ${entry.episode} 集没抓到资源，可能是锁集或站点限制`);
+      if (emptyStreak >= 3) {
+        if (!got && options) options.noVideoReason = NO_VIDEO_SKIP_REASON;
+        logTask(`已连续 ${emptyStreak} 集抓不到资源，直接切换下一个链接`);
+        break;
+      }
+    }
+    if (!got && emptyStreak >= 3 && options) {
+      options.noVideoReason = NO_VIDEO_SKIP_REASON;
+      logTask(`无视频内容：${NO_VIDEO_SKIP_REASON}`);
+    }
+    render();
+    return got;
+  }
+
+  async function prepareCurrentDramaForBatch(maxEpisodes, options) {
+    let grabbed = 0;
+    try { grabbed = await extractFromPageHtml(); } catch (e) { grabbed = 0; }
+    if (grabbed >= 1 && readyEpisodeGroups().length) return readyEpisodeGroups().length;
+
+    const prePlay = await safePlayerAction('play', 2200);
+    await sleep(prePlay && prePlay.playing ? 3500 : 1200);
+    render();
+
+    const tpl = deriveEpisodeTemplate();
+    if (tpl) {
+      const inferred = await inferEpisodeRange();
+      const start = 1;
+      const end = inferred.inferred
+        ? inferred.end
+        : Math.max(Number(maxEpisodes) || 200, tpl.sampleEp || 1);
+      const added = generateEpisodesFromTemplate(tpl, start, end);
+      logTask(`按文件名规律补出第 ${start}-${end} 集，新增 ${added} 集`);
+      return readyEpisodeGroups().length;
+    }
+
+    const gotByList = await collectEpisodeListForBatch(maxEpisodes, options);
+    if (gotByList) return readyEpisodeGroups().length;
+
+    return readyEpisodeGroups().length;
+  }
+
+  async function downloadListedEpisodes(dir, options) {
+    const keepUiRunning = !!(options && options.keepUiRunning);
+    const skipEpisodes = (options && options.skipEpisodes) || new Set();
+    const appendLog = !!(options && options.appendLog);
+    const groups = readyEpisodeGroups();
+    if (!groups.length) {
+      logTask('列表里还没有可下载的整集。请先点「获取全集」自动抓一遍，或手动播放几集。');
+      setStatus('还没有可下载的整集，请先「获取全集」', 'error');
+      return { ok: 0, failed: 0, total: 0, successEpisodes: [] };
+    }
+    if (!keepUiRunning) scanAbort = false;
+    if (!keepUiRunning) setScanUi(true);
+    let ok = 0, failed = 0;
+    const successEpisodes = [];
+    logTask(`开始下载列表里的 ${groups.length} 集到 ${dir}`, appendLog ? undefined : 'replace');
+    try {
+      for (const g of groups) {
+        if (scanAbort) break;
+        const ep = g.episodeNo;
+        if (skipEpisodes.has(ep)) {
+          logTask(`第 ${ep} 集已即时保存，跳过重复下载`);
+          continue;
+        }
+        logTask(`第 ${ep} 集 · ${ok + failed + 1}/${groups.length} · 合成 ${outputFileForEpisode(g, ep)}`);
+        try {
+          await mergeEpisodeToDir(g, dir, ep, 3);
+          ok++;
+          successEpisodes.push(ep);
+          activeDownloadedEpisodes.add(ep);
+          logTask(`第 ${ep} 集已保存 · 累计成功 ${ok} 集`);
+          await saveDramaSourceDocument(dir, { note: `第 ${ep} 集保存成功后自动更新` });
+        } catch (err) {
+          failed++;
+          logTask(`第 ${ep} 集失败：${err && err.message ? err.message : err}`);
+        }
+      }
+      logTask(scanAbort ? `已停止 · 成功 ${ok} · 失败 ${failed}` : `下载完成 · 成功 ${ok} 集 · 失败 ${failed} 集`);
+      return { ok, failed, total: groups.length, successEpisodes };
+    } finally {
+      if (!keepUiRunning) setScanUi(false);
+    }
+  }
+
+  async function downloadImportedLinks(rootDir, items, maxEpisodes) {
+    if (!Array.isArray(items) || !items.length) {
+      setStatus('导入列表为空', 'error');
+      return { success: 0, failed: 0 };
+    }
+
+    lastBatchRootDir = rootDir;
+    lastBatchMaxEpisodes = maxEpisodes;
+    scanAbort = false;
+    setScanUi(true);
+    beginFolderBatchScope();
+    let success = 0;
+    let failed = 0;
+    logTask(`批量下载开始 · 共 ${items.length} 部 · 总目录：${rootDir}`, 'replace');
+
+    try {
+      for (let i = 0; i < items.length; i++) {
+        if (scanAbort) break;
+        const item = items[i];
+        activeSeriesTitle = item.title || '';
+        const label = activeSeriesTitle || item.url;
+        logTask(`第 ${i + 1}/${items.length} 部：${label}`);
+
+        try {
+          await clearCapturedResources();
+          activeLinkDownloadDir = linkRunDownloadDir(rootDir, item.url, activeSeriesTitle);
+          activeDownloadedEpisodes = new Set();
+          backgroundJobs.clear();
+          backgroundPromises = [];
+          downloadingEpisodes.clear();
+          logTask(`本条链接保存文件夹：${activeLinkDownloadDir}`);
+          const startInfo = firstEpisodeUrlInfo(item.url);
+          const scanStartUrl = startInfo.firstUrl || startInfo.inputUrl || item.url;
+          setActiveSourceInfo({
+            title: label,
+            originalUrl: item.url,
+            startUrl: scanStartUrl,
+            importFile: importedFilePath || '',
+            sheetName: item.source || '',
+            row: item.row || '',
+            column: item.column || '',
+          });
+          if (startInfo.changed) {
+            logTask(`导入链接是第 ${startInfo.inputEpisode || '?'} 集，已先切到真正第 1 集：${scanStartUrl}`);
+          }
+          $('addressInput').value = scanStartUrl;
+          const nav = await api.navigate(scanStartUrl);
+          if (!nav || !nav.ok) throw new Error(nav && nav.error ? nav.error : '访问失败');
+          await waitForPageIdle(12000);
+          await sleep(1200);
+
+          const batchOptions = {
+            downloadAsReady: true,
+            downloadDir: activeLinkDownloadDir,
+            fastScan: isFastScanEnabled(),
+          };
+          const readyCount = await prepareCurrentDramaForBatch(maxEpisodes, batchOptions);
+          if (batchOptions.haltOnIncompleteEpisode) {
+            failed++;
+            const reason = `第 ${batchOptions.haltOnIncompleteEpisode} 集保存失败，已停止继续切集`;
+            recordBatchFailure(item, reason, { type: 'download-failed' });
+            logTask(`第 ${i + 1} 部已暂停：${label} · ${reason}`);
+            if (!activeDownloadedEpisodes.size) await cleanupEmptyLinkDir(activeLinkDownloadDir, rootDir, label);
+            continue;
+          }
+          if (!readyCount && !activeDownloadedEpisodes.size) {
+            failed++;
+            const reason = batchOptions.noVideoReason || '没有抓到可下载的免费整集资源';
+            recordBatchFailure(item, reason, { type: isNoVideoReason(reason) ? 'no-video' : 'download-failed', notice: isNoVideoReason(reason) });
+            logTask(`第 ${i + 1} 部没有整理出可下载整集，已跳过：${label} · ${reason}`);
+            if (!activeDownloadedEpisodes.size) await cleanupEmptyLinkDir(activeLinkDownloadDir, rootDir, label);
+            continue;
+          }
+
+          logTask(`等待所有后台下载任务完成... 共 ${backgroundPromises.length} 个任务`);
+          await Promise.all(backgroundPromises);
+          if (scanAbort) {
+            logTask('用户已停止，跳过补漏下载');
+            if (!activeDownloadedEpisodes.size) await cleanupEmptyLinkDir(activeLinkDownloadDir, rootDir, label);
+            break;
+          }
+
+          if (shouldForceFirstEpisodeRetry()) {
+            await retryFirstEpisodeUntilSaved(scanStartUrl, activeLinkDownloadDir, '补漏前检测到首集缺失');
+            if (scanAbort) break;
+          }
+
+          const allEpisodes = currentEpisodeGroups().filter(g => g.episodeNo && g.main && !g.incomplete).map(g => g.episodeNo);
+          const missingEpisodes = allEpisodes.filter(ep => !activeDownloadedEpisodes.has(ep));
+          if (missingEpisodes.length) {
+            logTask(`发现 ${missingEpisodes.length} 集未成功下载，将重新补漏`);
+            const result = await downloadListedEpisodes(activeLinkDownloadDir, {
+              keepUiRunning: true,
+              skipEpisodes: activeDownloadedEpisodes,
+              appendLog: true,
+            });
+            if (result.ok) {
+              logTask(`补漏下载完成，成功 ${result.ok} 集，失败 ${result.failed} 集`);
+              for (const ep of result.successEpisodes) {
+                activeDownloadedEpisodes.add(ep);
+              }
+            }
+          }
+
+          const savedTotal = activeDownloadedEpisodes.size;
+          if (savedTotal > 0) {
+            await saveDramaSourceDocument(activeLinkDownloadDir, { savedTotal, note: '本剧批量保存完成后自动更新' });
+            success++;
+            startAutoAnalyzeForDir(activeLinkDownloadDir, label);
+            if (missingEpisodes.length) {
+              logTask(`提醒：${label} 有 ${missingEpisodes.length} 集最终仍然失败，但已有 ${savedTotal} 集成功保存`);
+            }
+          } else {
+            failed++;
+            recordBatchFailure(item, '已识别到整集资源，但没有任何一集成功保存');
+            await cleanupEmptyLinkDir(activeLinkDownloadDir, rootDir, label);
+          }
+        } catch (err) {
+          failed++;
+          const message = err && err.message ? err.message : String(err);
+          recordBatchFailure(item, message);
+          logTask(`第 ${i + 1} 部失败：${message}`);
+          if (!activeDownloadedEpisodes.size) await cleanupEmptyLinkDir(activeLinkDownloadDir, rootDir, label);
+        }
+      }
+    } finally {
+      activeScanEpisodeNo = 0;
+      scanAbort = false;
+      setScanUi(false);
+      logTask(`批量下载结束 · 成功处理 ${success} 部 · 失败 ${failed} 部`);
+      if (failedBatchItems.length) {
+        logTask(`失败清单已记录 ${failedBatchItems.length} 个链接，可点击「重试失败」重新处理`);
+      }
+      activeBatchFolderStamp = '';
+      activeLinkFolderMap = new Map();
+      activeLinkFolderPaths = new Set();
+    }
+    return { success, failed };
+  }
+
+  async function importLinksFile() {
+    if (scanRunning) {
+      await requestStop('正在停止当前批量任务…');
+      return;
+    }
+    if (!api.selectLinkFile) {
+      setStatus('当前版本不支持导入链接文件', 'error');
+      return;
+    }
+
+    const res = await api.selectLinkFile();
+    if (!res || !res.ok) {
+      if (!res || !res.canceled) setStatus(res && res.error ? res.error : '导入失败', 'error');
+      return;
+    }
+    importedLinks = Array.isArray(res.items) ? res.items : [];
+    importedFilePath = res.filePath || '';
+    clearBatchFailures();
+    if (!importedLinks.length) {
+      logTask('文件里没有识别到 http/https 链接', 'replace');
+      setStatus('文件里没有识别到链接', 'error');
+      return;
+    }
+
+    logTask(`已导入 ${importedLinks.length} 条剧集链接：${res.fileName || importedFilePath}`, 'replace');
+    importedLinks.slice(0, 5).forEach((item, idx) => {
+      logTask(`${idx + 1}. ${item.title || '未命名剧'} · ${item.url}`);
+    });
+    if (importedLinks.length > 5) logTask(`还有 ${importedLinks.length - 5} 条未展示，将按顺序处理`);
+
+    const rootDir = await ensureDownloadDir();
+    if (!rootDir) {
+      setStatus('已取消：没有选择总保存目录', 'error');
+      return;
+    }
+
+    const maxText = await askInput(
+      '批量导入会按文件里的链接逐部访问并下载。\n' +
+      '如果某个网页识别不到总集数，最多尝试多少集？\n' +
+      '建议填 200；能识别总集数的站点会自动按真实总集数处理。',
+      '200'
+    );
+    if (maxText == null) {
+      setStatus('已取消批量下载');
+      return;
+    }
+    const maxEpisodes = Math.min(Math.max(parseInt(maxText, 10) || 200, 1), 1000);
+    const ok = window.confirm(
+      '将开始批量下载：\n' +
+      `文件：${res.fileName || importedFilePath}\n` +
+      `链接数：${importedLinks.length}\n` +
+      `总保存目录：${rootDir}\n\n` +
+      '每部剧会自动创建一个剧名文件夹，完整一部剧放进同一个文件夹。确定开始？'
+    );
+    if (!ok) {
+      setStatus('已取消批量下载');
+      return;
+    }
+
+    await downloadImportedLinks(rootDir, importedLinks, maxEpisodes);
+  }
+
+  async function retryFailedLinks() {
+    if (scanRunning) {
+      await requestStop('正在停止当前批量任务…');
+      return;
+    }
+    if (!failedBatchItems.length) {
+      setStatus('没有失败链接可重试');
+      return;
+    }
+    const rootDir = lastBatchRootDir || await ensureDownloadDir();
+    if (!rootDir) {
+      setStatus('已取消：没有选择总保存目录', 'error');
+      return;
+    }
+    const retryItems = failedBatchItems.map(item => ({ ...item }));
+    const detail = retryItems
+      .slice(0, 8)
+      .map((item, idx) => `${idx + 1}. ${item.title || '未命名剧'}\n   ${item.reason || ''}\n   ${item.url}`)
+      .join('\n');
+    const ok = window.confirm(
+      `准备重试 ${retryItems.length} 个失败链接：\n\n${detail}` +
+      (retryItems.length > 8 ? `\n...还有 ${retryItems.length - 8} 个` : '') +
+      `\n\n总保存目录：${rootDir}\n确定重试？`
+    );
+    if (!ok) return;
+    clearBatchFailures();
+    await downloadImportedLinks(rootDir, retryItems, lastBatchMaxEpisodes || 200);
+  }
+
+  async function autoSaveManualVisit(url) {
+    syncDownloadDirFromInput();
+    if (!downloadDir) {
+      logTask('手动链接已访问。还没有设置总保存目录，请先点「总目录」选择一次；以后会自动沿用。');
+      setStatus('请先选择总保存目录，之后手动访问链接会自动保存', 'error');
+      return;
+    }
+
+    scanAbort = false;
+    setScanUi(true);
+    logTask(`手动链接自动保存：${url}`, 'replace');
+    try {
+      activeLinkDownloadDir = linkRunDownloadDir(downloadDir, url, activeSeriesTitle);
+      activeDownloadedEpisodes = new Set();
+      backgroundJobs.clear();
+      backgroundPromises = [];
+      downloadingEpisodes.clear();
+      logTask(`本条链接保存文件夹：${activeLinkDownloadDir}`);
+      const startInfo = firstEpisodeUrlInfo(url);
+      const originalInputUrl = startInfo.inputUrl;
+      const startUrl = startInfo.firstUrl || originalInputUrl;
+      setActiveSourceInfo({
+        title: activeSeriesTitle || lastState.title || titleFromUrl(startUrl),
+        originalUrl: originalInputUrl || url,
+        startUrl,
+      });
+      if (startInfo.changed) {
+        logTask(`检测到输入链接是第 ${startInfo.inputEpisode || '?'} 集，已改为真正第 1 集开始获取全集：${startUrl}`);
+        await clearCapturedResources();
+        $('addressInput').value = startUrl;
+        const nav = await api.navigate(startUrl);
+        if (!nav || !nav.ok) {
+          logTask('切到第 1 集失败：' + (nav && nav.error ? nav.error : '访问失败') + '，继续尝试当前页面');
+        }
+      }
+
+      // 确保第 1 集被尝试抓取
+      const fastScan = isFastScanEnabled();
+      await ensureFirstEpisode(startUrl, activeLinkDownloadDir, { fastScan });
+
+      logTask('正在自动获取全集资源并准备下载…');
+      const batchOptions = {
+        downloadAsReady: true,
+        downloadDir: activeLinkDownloadDir,
+        fastScan,
+      };
+      const readyCount = await prepareCurrentDramaForBatch(lastBatchMaxEpisodes || 200, batchOptions);
+      if (scanAbort) return;
+      if (batchOptions.haltOnIncompleteEpisode) {
+        const reason = `第 ${batchOptions.haltOnIncompleteEpisode} 集保存失败，已停止继续切集`;
+        recordBatchFailure({ url: originalInputUrl || startUrl, title: activeSeriesTitle || lastState.title || titleFromUrl(startUrl) }, reason, {
+          type: 'download-failed',
+        });
+        logTask(reason);
+        setStatus(reason, 'error');
+        if (!activeDownloadedEpisodes.size) await cleanupEmptyLinkDir(activeLinkDownloadDir, downloadDir, activeSeriesTitle || titleFromUrl(startUrl));
+        return;
+      }
+      await sleep(1500);
+      render();
+      const groups = readyEpisodeGroups();
+      if (!groups.length && !activeDownloadedEpisodes.size) {
+        const reason = batchOptions.noVideoReason || '自动获取全集后仍没有抓到可保存的整集资源；可能是锁集、站点限制，或需要人工播放解锁。';
+        recordBatchFailure({ url: originalInputUrl || startUrl, title: activeSeriesTitle || lastState.title || titleFromUrl(startUrl) }, reason, {
+          type: isNoVideoReason(reason) ? 'no-video' : 'download-failed',
+          notice: isNoVideoReason(reason),
+        });
+        logTask(reason);
+        setStatus(isNoVideoReason(reason) ? '已跳过：这条链接没有视频内容' : '没有抓到可保存整集资源', 'error');
+        if (!activeDownloadedEpisodes.size) await cleanupEmptyLinkDir(activeLinkDownloadDir, downloadDir, activeSeriesTitle || titleFromUrl(startUrl));
+        return;
+      }
+
+      logTask(`等待所有后台下载任务完成... 共 ${backgroundPromises.length} 个任务`);
+      await Promise.all(backgroundPromises);
+      if (scanAbort) {
+        logTask('已停止，跳过补漏下载');
+        setStatus('已停止自动保存', 'error');
+        if (!activeDownloadedEpisodes.size) await cleanupEmptyLinkDir(activeLinkDownloadDir, downloadDir, activeSeriesTitle || titleFromUrl(startUrl));
+        return;
+      }
+
+      if (shouldForceFirstEpisodeRetry()) {
+        await retryFirstEpisodeUntilSaved(startUrl, activeLinkDownloadDir, '补漏前检测到首集缺失');
+        if (scanAbort) {
+          setStatus('已停止自动保存', 'error');
+          return;
+        }
+      }
+
+      const allEpisodes = currentEpisodeGroups().filter(g => g.episodeNo && g.main && !g.incomplete).map(g => g.episodeNo);
+      const missingEpisodes = allEpisodes.filter(ep => !activeDownloadedEpisodes.has(ep));
+      if (missingEpisodes.length) {
+        logTask(`发现 ${missingEpisodes.length} 集未成功下载，将重新补漏`);
+        const result = await downloadListedEpisodes(activeLinkDownloadDir, {
+          keepUiRunning: true,
+          skipEpisodes: activeDownloadedEpisodes,
+          appendLog: true,
+        });
+        if (result.ok) {
+          logTask(`补漏下载完成，成功 ${result.ok} 集，失败 ${result.failed} 集`);
+          for (const ep of result.successEpisodes) {
+            activeDownloadedEpisodes.add(ep);
+          }
+        }
+      }
+
+      const savedTotal = activeDownloadedEpisodes.size;
+      if (scanAbort) {
+        setStatus('已停止自动保存', 'error');
+      } else if (savedTotal) {
+        await saveDramaSourceDocument(activeLinkDownloadDir, { savedTotal, note: '手动链接自动保存完成后自动更新' });
+        startAutoAnalyzeForDir(activeLinkDownloadDir, activeSeriesTitle || lastState.title || titleFromUrl(startUrl));
+        setStatus(`已自动保存 ${savedTotal} 集到：${activeLinkDownloadDir}`);
+      } else {
+        setStatus('自动保存未成功，请查看日志里的失败原因', 'error');
+        await cleanupEmptyLinkDir(activeLinkDownloadDir, downloadDir, activeSeriesTitle || titleFromUrl(startUrl));
+      }
+    } finally {
+      scanAbort = false;
+      setScanUi(false);
+    }
+  }
+
+  function buildUrlTemplate(url, ep) {
+    try {
+      const u = new URL(url);
+      const segs = u.pathname.split('/');
+      const file = decodeURIComponent(segs[segs.length - 1]);
+      let m = file.match(/^(\d{1,4})([_-]*\.(?:m3u8|m3u|mpd|mp4|m4v))$/i);
+      if (m && Number(m[1]) === ep && !RESOLUTION_NUMBERS.has(ep)) {
+        const pad = m[1].length, tail = m[2];
+        return { form: 'file', make: (n) => { const s = u.pathname.split('/'); s[s.length - 1] = encodeURIComponent(String(n).padStart(pad, '0') + tail); const uu = new URL(url); uu.pathname = s.join('/'); return uu.toString(); } };
+      }
+      m = file.match(/^((?:manifest|index|playlist|chunklist|media)[_-]?)(\d{1,4})(\.(?:m3u8|m3u))$/i);
+      if (m && Number(m[2]) === ep && !RESOLUTION_NUMBERS.has(ep)) {
+        const pre = m[1], pad = m[2].length, suf = m[3];
+        return { form: 'manifest', make: (n) => { const s = u.pathname.split('/'); s[s.length - 1] = encodeURIComponent(pre + String(n).padStart(pad, '0') + suf); const uu = new URL(url); uu.pathname = s.join('/'); return uu.toString(); } };
+      }
+      for (let i = segs.length - 2; i >= 0; i--) {
+        const sm = decodeURIComponent(segs[i]).match(/^(ep|episode|e)?[_-]?(\d{1,4})$/i);
+        if (sm && Number(sm[2]) === ep && !RESOLUTION_NUMBERS.has(ep)) {
+          const pre = sm[1] || '', pad = sm[2].length;
+          return { form: 'path', make: (n) => { const s = u.pathname.split('/'); s[i] = pre + String(n).padStart(pad, '0'); const uu = new URL(url); uu.pathname = s.join('/'); return uu.toString(); } };
+        }
+      }
+    } catch {}
+    return null;
+  }
+
+  function deriveEpisodeTemplate() {
+    const cands = [];
+    Array.from(resources.values()).filter(isWholeMedia).forEach((it) => {
+      const ep = extractResourceEpisodeNo(it.filename) || extractResourceEpisodeNo(it.url);
+      if (ep) cands.push({ it, ep });
+    });
+    cands.sort((a, b) => (typeOf(a.it) === 'm3u8' ? 0 : 1) - (typeOf(b.it) === 'm3u8' ? 0 : 1));
+    for (const { it, ep } of cands) {
+      const tpl = buildUrlTemplate(it.url, ep);
+      if (tpl) return { make: tpl.make, form: tpl.form, sampleEp: ep, referer: it.referer || '', userAgent: it.userAgent || '' };
+    }
+    return null;
+  }
+
+  // 规律下载复用 mergeEpisodeToDir 的重试逻辑
+  async function downloadAllByTemplate(tpl, start, end, dir) {
+    scanAbort = false;
+    setScanUi(true);
+    let ok = 0, failed = 0;
+    const successEpisodes = [];
+    logTask(`按文件名规律下载第 ${start}-${end} 集（不翻页，逐集合成，顺序固定）`, 'replace');
+    try {
+      for (let ep = start; ep <= end; ep++) {
+        if (scanAbort) break;
+        const url = tpl.make(ep);
+        const name = cleanOutputName(String(ep).padStart(3, '0') + '-第' + ep + '集', '第' + ep + '集') + '.mp4';
+        logTask(`第 ${ep} 集 · ${ep - start + 1}/${end - start + 1} · 合成 ${name}`);
+        // 构造一个临时的 group 对象，以便复用 mergeEpisodeToDir
+        const tempGroup = {
+          main: { url: url, referer: tpl.referer, userAgent: tpl.userAgent },
+          title: '第' + ep + '集',
+          incomplete: false,
+          episodeNo: ep
+        };
+        try {
+          await mergeEpisodeToDir(tempGroup, dir, ep, 3);
+          ok++;
+          successEpisodes.push(ep);
+          activeDownloadedEpisodes.add(ep);
+          logTask(`第 ${ep} 集已保存 · 累计成功 ${ok} 集`);
+          await saveDramaSourceDocument(dir, { note: `第 ${ep} 集保存成功后自动更新` });
+        } catch (err) {
+          failed++;
+          logTask(`第 ${ep} 集失败：${err && err.message ? err.message : err}`);
+        }
+      }
+      logTask(scanAbort ? `已停止 · 成功 ${ok} 集 · 失败 ${failed} 集` : `规律下载完成 · 成功 ${ok} 集 · 失败 ${failed} 集`);
+      return { ok, failed, total: end - start + 1, successEpisodes };
+    } finally {
+      scanAbort = false;
+      setScanUi(false);
+    }
+  }
+
+  async function downloadEpisodeRange() {
+    if (scanRunning) {
+      await requestStop('正在停止下载全集和合成任务…');
+      return;
+    }
+
+    logTask('准备下载全集：检查总保存目录…', 'replace');
+    const rootDir = await ensureDownloadDir();
+    if (!rootDir) {
+      logTask('已取消：没有选择总保存目录');
+      setStatus('已取消：没有选择总保存目录', 'error');
+      return;
+    }
+
+    const currentUrl = normalizeUrl(lastState.url || $('addressInput').value);
+    const dir = linkRunDownloadDir(rootDir, currentUrl, activeSeriesTitle || lastState.title || titleFromUrl(currentUrl));
+    if (activeLinkDownloadDir !== dir) activeDownloadedEpisodes = new Set();
+    activeLinkDownloadDir = dir;
+    setActiveSourceInfo({
+      title: activeSeriesTitle || lastState.title || titleFromUrl(currentUrl),
+      originalUrl: currentUrl,
+      startUrl: currentUrl,
+    });
+    logTask('总保存目录：' + rootDir);
+    logTask('本剧独立文件夹：' + dir);
+
+    // 确保第1集被尝试抓取
+    await ensureFirstEpisode(currentUrl, '', { fastScan: isFastScanEnabled() });
+
+    const tpl = deriveEpisodeTemplate();
+    if (tpl) {
+      setStatus('正在识别网页总集数…');
+      const inferred = await inferEpisodeRange();
+      let start = inferred.start;
+      let end = inferred.end;
+      if (!inferred.inferred) {
+        const rangeText = await askInput('已检测到可按文件名规律下载（样本第 ' + tpl.sampleEp + ' 集）。\n请输入要下载的范围，例如 1-80；只填 80 代表 1-80。', `1-${end}`);
+        if (rangeText == null) { logTask('已取消下载全集'); return; }
+        ({ start, end } = parseRange(rangeText, inferred.current));
+      }
+      if (!start || !end || end < start) { setStatus('集数范围不正确', 'error'); return; }
+      if (end - start + 1 > 300 && !window.confirm('范围超过 300 集，会很久，确定继续吗？')) return;
+      const go = window.confirm(
+        '将按文件名规律下载第 ' + start + '–' + end + ' 集到本剧独立文件夹：\n' + dir +
+        '\n\n样本（第 ' + tpl.sampleEp + ' 集）地址：\n' + decodeURIComponent(tpl.make(tpl.sampleEp)) +
+        '\n\n确定开始？\n（点“取消”则改为下载列表里已抓到的集）'
+      );
+      if (go) {
+        const result = await downloadAllByTemplate(tpl, start, end, dir);
+        if (result && result.ok) {
+          await saveDramaSourceDocument(dir, { savedTotal: result.ok, note: '下载全集完成后自动更新' });
+          startAutoAnalyzeForDir(dir, activeSeriesTitle || lastState.title || titleFromUrl(currentUrl));
+        }
+        return;
+      }
+    }
+
+    const result = await downloadListedEpisodes(dir);
+    if (result && result.ok) {
+      await saveDramaSourceDocument(dir, { savedTotal: result.ok, note: '下载全集完成后自动更新' });
+      startAutoAnalyzeForDir(dir, activeSeriesTitle || lastState.title || titleFromUrl(currentUrl));
+    }
+  }
+
+  async function downloadManualM3u8(url) {
+    if (!url) return;
+    const rootDir = await ensureDownloadDir();
+    if (!rootDir) return;
+    const currentUrl = normalizeUrl(lastState.url || $('addressInput').value);
+    const dir = linkRunDownloadDir(rootDir, currentUrl, activeSeriesTitle || lastState.title || titleFromUrl(currentUrl));
+    if (activeLinkDownloadDir !== dir) activeDownloadedEpisodes = new Set();
+    activeLinkDownloadDir = dir;
+    setActiveSourceInfo({
+      title: activeSeriesTitle || lastState.title || titleFromUrl(currentUrl),
+      originalUrl: currentUrl,
+      startUrl: currentUrl,
+      note: '手动 m3u8 下载',
+    });
+    const outputName = 'manual-' + Date.now() + '.mp4';
+    const outputPath = joinPath(dir, outputName);
+    logTask(`手动下载: ${url} -> ${outputPath}`);
+    try {
+      const result = await api.mergeMp4({
+        mode: 'manifest',
+        url: url,
+        outputPath: outputPath,
+        referer: lastState.url,
+        userAgent: navigator.userAgent,
+        headers: customHeaders
+      });
+      if (result && result.ok) {
+        await waitForMerge(result.jobId);
+        await saveDramaSourceDocument(dir, { savedTotal: 1, note: `手动 m3u8 已保存：${url}` });
+        setStatus(`手动 m3u8 已保存到 ${dir}`);
+        logTask(`手动下载完成: ${outputName}`);
+      } else {
+        throw new Error(result && result.error ? result.error : '启动合成失败');
+      }
+    } catch (err) {
+      const msg = err && err.message ? String(err) : '未知错误';
+      setStatus(`手动下载失败: ${msg}`, 'error');
+      logTask(`手动下载失败: ${msg}`);
+    }
+  }
+
+  function parseCustomHeaders(inputText) {
+    const headers = {};
+    const lines = inputText.split(/\r?\n/);
+    for (const line of lines) {
+      const idx = line.indexOf(':');
+      if (idx > 0) {
+        const key = line.slice(0, idx).trim();
+        const val = line.slice(idx + 1).trim();
+        if (key && val) headers[key] = val;
+      }
+    }
+    return headers;
+  }
+
+  // ========== 事件绑定 ==========
+  $('navForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const url = normalizeUrl($('addressInput').value);
+    if (!url) return;
+    if (scanRunning) {
+      await requestStop('正在停止当前任务…');
+      return;
+    }
+    activeSeriesTitle = titleFromUrl(url);
+    await clearCapturedResources();
+    setStatus('正在访问 ' + url);
+    const result = await api.navigate(url);
+    if (!result || !result.ok) {
+      setStatus(result && result.error ? result.error : '访问失败', 'error');
+      return;
+    }
+    await autoSaveManualVisit(url);
+  });
+
+  $('backBtn').addEventListener('click', () => api.browserCommand('back'));
+  $('forwardBtn').addEventListener('click', () => api.browserCommand('forward'));
+  $('reloadBtn').addEventListener('click', () => api.browserCommand(lastState.isLoading ? 'stop' : 'reload'));
+  $('chooseDirBtn').addEventListener('click', async () => {
+    const res = await api.selectDirectory();
+    if (res && res.ok) {
+      setDownloadDir(res.path);
+      setStatus('总保存目录已设置，下载时会自动按剧名建文件夹: ' + res.path);
+    }
+  });
+  $('downloadDirInput').addEventListener('change', syncDownloadDirFromInput);
+  $('downloadDirInput').addEventListener('blur', syncDownloadDirFromInput);
+  $('downloadDirInput').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      syncDownloadDirFromInput();
+      $('downloadDirInput').blur();
+    }
+  });
+  $('chooseAnalysisDirBtn').addEventListener('click', async () => {
+    const picker = api.selectAnalysisDirectory || api.selectDirectory;
+    const res = await picker();
+    if (res && res.ok) {
+      clearAnalysisSelectedFiles();
+      setAnalysisDir(res.path);
+      setStatus('解析目录已设置，解析/导出会优先读取这里的视频: ' + res.path);
+    }
+  });
+  $('chooseAnalysisFilesBtn').addEventListener('click', async () => {
+    if (!api.selectAnalysisFiles) {
+      setStatus('当前安装包缺少多选视频接口，请重新打包安装', 'error');
+      return;
+    }
+    const res = await api.selectAnalysisFiles();
+    if (res && res.ok) {
+      const files = Array.isArray(res.files) ? res.files : [];
+      setAnalysisDir(res.rootDir || (files[0] && files[0].dir) || '');
+      setAnalysisSelectedFiles(files);
+      setStatus(`已选择 ${files.length} 个视频，点击「解析视频」开始`);
+      logAnalysis(`已选择 ${files.length} 个视频：${files.map(file => file.name).join('、')}`, 'replace');
+    } else if (res && !res.canceled) {
+      setStatus(res.error || '选择视频失败', 'error');
+    }
+  });
+  $('analysisDirInput').addEventListener('change', syncAnalysisDirFromInput);
+  $('analysisDirInput').addEventListener('blur', syncAnalysisDirFromInput);
+  $('analysisDirInput').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      syncAnalysisDirFromInput();
+      $('analysisDirInput').blur();
+    }
+  });
+  $('importLinksBtn').addEventListener('click', importLinksFile);
+  $('retryFailedBtn').addEventListener('click', retryFailedLinks);
+  $('downloadAllBtn').addEventListener('click', downloadEpisodeRange);
+  $('clearBtn').addEventListener('click', async () => {
+    resources.clear();
+    render();
+    await api.clear();
+    setStatus('已清空捕获列表');
+  });
+  $('scanAllBtn').addEventListener('click', scanEpisodeRange);
+
+  document.querySelector('.filters').addEventListener('click', (event) => {
+    const btn = event.target.closest('.filter');
+    if (!btn) return;
+    activeFilter = btn.dataset.filter || 'all';
+    document.querySelectorAll('.filter').forEach(x => x.classList.toggle('active', x === btn));
+    render();
+  });
+
+  $('resourceList').addEventListener('click', async (event) => {
+    const btn = event.target.closest('.action');
+    if (!btn) return;
+    const episodeNode = btn.closest('.episode');
+    if (episodeNode) {
+      const group = episodeGroups.get(episodeNode.dataset.episodeId);
+      if (!group) return;
+      const act = btn.dataset.act;
+      const main = group.main || group.items[0];
+      if (act === 'copy-episode') {
+        await api.copy(episodeLinkList(group));
+        setStatus(group.main ? '已复制整集链接' : `已复制 ${group.count} 个分片链接`);
+      } else if (act === 'merge-mp4') {
+        if (group.incomplete) {
+          setStatus('这组只抓到部分分片，不能保证完整内容；请先点“获取全集”或等待整集 m3u8 出现。', 'error');
+          return;
+        }
+        const rootDir = await ensureDownloadDir();
+        if (!rootDir) {
+          setStatus('已取消：没有选择总保存目录', 'error');
+          return;
+        }
+        const currentUrl = normalizeUrl(lastState.url || $('addressInput').value);
+        const dir = linkRunDownloadDir(rootDir, currentUrl, activeSeriesTitle || lastState.title || titleFromUrl(currentUrl));
+        if (activeLinkDownloadDir !== dir) activeDownloadedEpisodes = new Set();
+        activeLinkDownloadDir = dir;
+        setActiveSourceInfo({
+          title: activeSeriesTitle || lastState.title || titleFromUrl(currentUrl),
+          originalUrl: currentUrl,
+          startUrl: currentUrl,
+        });
+        const ep = group.episodeNo || 1;
+        setStatus('正在合成保存到独立文件夹：' + dir);
+        try {
+          const outputPath = await mergeEpisodeToDir(group, dir, ep, 3);
+          activeDownloadedEpisodes.add(ep);
+          await saveDramaSourceDocument(dir, { savedTotal: activeDownloadedEpisodes.size, note: `手动合成第 ${ep} 集后自动更新` });
+          setStatus('合成保存完成：' + outputPath);
+        } catch (err) {
+          setStatus(err && err.message ? err.message : '合成失败', 'error');
+        }
+      } else if (act === 'ffmpeg') {
+        await api.copy(episodeFfmpeg(group));
+        setStatus('已复制整集合并命令');
+      } else if (act === 'open-episode' && main) {
+        await api.openUrl(main.url);
+        setStatus('已用系统浏览器打开整集资源');
+      } else if (act === 'download-episode' && group.main) {
+        const result = await api.downloadUrl({ url: group.main.url, filename: group.main.filename });
+        if (!result || !result.ok) setStatus(result && result.error ? result.error : '下载失败', 'error');
+      }
+      return;
+    }
+
+    const node = btn.closest('.item');
+    const item = node ? resources.get(node.dataset.id) : null;
+    if (!item) return;
+    const act = btn.dataset.act;
+    if (act === 'copy') {
+      await api.copy(item.url);
+      setStatus('已复制链接');
+    } else if (act === 'curl') {
+      await api.copy(curlFor(item));
+      setStatus('已复制 curl 命令');
+    } else if (act === 'open') {
+      await api.openUrl(item.url);
+      setStatus('已用系统浏览器打开');
+    } else if (act === 'download') {
+      const result = await api.downloadUrl({ url: item.url, filename: item.filename });
+      if (!result || !result.ok) setStatus(result && result.error ? result.error : '下载失败', 'error');
+    }
+  });
+
+  $('setHeadersBtn').addEventListener('click', () => {
+    const raw = $('customHeadersInput').value;
+    customHeaders = parseCustomHeaders(raw);
+    setStatus(`已应用 ${Object.keys(customHeaders).length} 个自定义请求头`);
+  });
+
+  $('manualDownloadBtn').addEventListener('click', async () => {
+    const url = $('manualM3u8Input').value.trim();
+    if (!url) {
+      setStatus('请输入 m3u8 链接', 'error');
+      return;
+    }
+    await downloadManualM3u8(url);
+  });
+  $('analyzeVideosBtn').addEventListener('click', analyzeSavedVideos);
+  $('stopAnalysisBtn').addEventListener('click', stopVideoAnalysis);
+  $('retryMissingAnalysisBtn').addEventListener('click', () => analyzeSavedVideos({ missingOnly: true }));
+  $('exportAnalysesBtn').addEventListener('click', exportAnalyses);
+
+  if (!api) {
+    setStatus('当前环境不支持视频抓取', 'error');
+    return;
+  }
+
+  api.onItem((item) => {
+    const existing = resources.get(item.id);
+    if (existing && existing.scanEpisodeNo) {
+      item.scanEpisodeNo = existing.scanEpisodeNo;
+      item.scanToken = existing.scanToken;
+    } else if (activeScanEpisodeNo && activeScanToken) {
+      item.scanEpisodeNo = activeScanEpisodeNo;
+      item.scanToken = activeScanToken;
+    } else if (!item.scanEpisodeNo && urlLooksEpisode(lastState.url || $('addressInput').value)) {
+      item.scanEpisodeNo = extractEpisodeNo(lastState.url || $('addressInput').value);
+    }
+    // 标记：本资源是否来自 ReelShort 这类"集号靠不透明 id"的站点（用当前页面/地址判断，盖在资源上）
+    if (existing && existing.fromOpaqueSite) item.fromOpaqueSite = true;
+    if (!item.fromOpaqueSite && (
+      hasPerEpisodeOpaqueId(item.pageUrl) || hasPerEpisodeOpaqueId(item.referer) ||
+      hasPerEpisodeOpaqueId(lastState.url) || hasPerEpisodeOpaqueId($('addressInput').value)
+    )) {
+      item.fromOpaqueSite = true;
+    }
+    if (!item.scanEpisodeNo) {
+      const guessed = episodeNoOf(item);
+      if (guessed) item.scanEpisodeNo = guessed;
+    }
+    resources.set(item.id, item);
+    render();
+    const ep = episodeNoOf(item);
+    setStatus('捕获到 ' + (ep ? `第 ${ep} 集 ` : '') + (item.ext || 'media') + ' 资源');
+  });
+
+  api.onReset(() => {
+    resources.clear();
+    render();
+  });
+
+  api.onBrowserState(updateBrowserState);
+  api.onDownload((info) => {
+    if (!info) return;
+    if (info.state === 'started') setStatus('开始下载 ' + info.filename);
+    else if (info.state === 'completed') setStatus('下载完成 ' + info.filename);
+    else setStatus('下载状态: ' + info.state, info.state === 'cancelled' ? 'error' : '');
+  });
+  api.onMerge((info) => {
+    if (!info) return;
+    if (info.state === 'started') setStatus(info.message || '开始合成 MP4');
+    else if (info.state === 'progress') setStatus(info.message || '合成中…');
+    else if (info.state === 'cancelled') {
+      setStatus(info.message || '已停止 MP4 合成');
+      const waiter = info.jobId && mergeWaiters.get(info.jobId);
+      if (waiter) {
+        mergeWaiters.delete(info.jobId);
+        waiter.reject(new Error(info.message || 'MP4 合成已停止'));
+      }
+    }
+    else if (info.state === 'completed') {
+      setStatus('MP4 合成完成: ' + (info.path || ''));
+      const waiter = info.jobId && mergeWaiters.get(info.jobId);
+      if (waiter) {
+        mergeWaiters.delete(info.jobId);
+        waiter.resolve(info);
+      }
+    } else if (info.state === 'error') {
+      setStatus(info.message || 'MP4 合成失败', 'error');
+      const waiter = info.jobId && mergeWaiters.get(info.jobId);
+      if (waiter) {
+        mergeWaiters.delete(info.jobId);
+        waiter.reject(new Error(info.message || 'MP4 合成失败'));
+      }
+    }
+  });
+  if (api.onAnalysis) {
+    api.onAnalysis((info) => {
+      if (!info) return;
+      const label = info.episodeNo ? `第 ${info.episodeNo} 集` : (info.fileName || '视频');
+      if (info.state === 'started') {
+        logAnalysis(`${label} 开始解析`);
+      } else if (info.state === 'attempt') {
+        logAnalysis(`${label} ${info.message || '正在调用后端转 URL 接口'}`);
+      } else if (info.state === 'uploaded') {
+        logAnalysis(`${label} 已生成视频 URL：${info.videoUrl || ''}`);
+      } else if (info.state === 'completed') {
+        logAnalysis(`${label} 解析完成，已写入内部缓存`);
+      } else if (info.state === 'error') {
+        logAnalysis(`${label} 解析失败：${info.message || '未知错误'}`);
+      }
+    });
+  }
+
+  new ResizeObserver(syncBounds).observe($('browserSlot'));
+  window.addEventListener('resize', syncBounds);
+  document.addEventListener('DOMContentLoaded', syncBounds);
+  setTimeout(syncBounds, 80);
+
+  function setupBackButton() {
+    const btn = $('backToAppBtn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      if (api && api.closeWindow) {
+        api.closeWindow().catch(() => { try { window.close(); } catch (e) {} });
+      } else {
+        try { window.close(); } catch (e) {}
+      }
+    });
+  }
+
+  function setupEvolinkConfig() {
+    const directEl = $('evolinkDirectModeInput');
+    const keyEl = $('evolinkKeyInput');
+    const promptEl = $('evolinkPromptInput');
+    const modelEl = $('evolinkModelInput');
+    const statusEl = $('evolinkStatus');
+    const saveBtn = $('evolinkSaveBtn');
+    const clearBtn = $('evolinkClearBtn');
+    if (!keyEl || !saveBtn) return;
+    const refresh = () => {
+      const k = (localStorage.getItem('evolink_key') || '').trim();
+      const direct = isEvolinkDirectEnabled();
+      if (statusEl) {
+        if (direct) {
+          statusEl.textContent = k ? '当前路线：直连 EvoLink（绕过后端）' : '当前路线：直连 EvoLink，但还没有填写 Key';
+          statusEl.className = 'evolink-status' + (k ? ' ok' : '');
+        } else {
+          statusEl.textContent = '当前路线：后端模型（Key 不会参与本次解析）';
+          statusEl.className = 'evolink-status ok';
+        }
+      }
+    };
+    if (directEl) directEl.checked = localStorage.getItem(EVOLINK_DIRECT_MODE_KEY) === '1';
+    keyEl.value = localStorage.getItem('evolink_key') || '';
+    if (promptEl) promptEl.value = localStorage.getItem('evolink_video_prompt') || '';
+    if (modelEl) modelEl.value = localStorage.getItem('evolink_model') || '';
+    refresh();
+    if (directEl) directEl.addEventListener('change', () => {
+      localStorage.setItem(EVOLINK_DIRECT_MODE_KEY, directEl.checked ? '1' : '0');
+      refresh();
+      setStatus(directEl.checked ? '已打开直连模式：解析会使用 EvoLink Key' : '已关闭直连模式：解析会走后端模型');
+    });
+    saveBtn.addEventListener('click', () => {
+      const k = (keyEl.value || '').trim();
+      if (k) localStorage.setItem('evolink_key', k); else localStorage.removeItem('evolink_key');
+      if (promptEl) localStorage.setItem('evolink_video_prompt', promptEl.value || '');
+      if (modelEl) {
+        const m = (modelEl.value || '').trim();
+        if (m) localStorage.setItem('evolink_model', m); else localStorage.removeItem('evolink_model');
+      }
+      refresh();
+      setStatus(isEvolinkDirectEnabled()
+        ? (k ? '已保存 EvoLink 配置，本次解析将直连' : '已保存，但直连模式还缺 EvoLink Key')
+        : '已保存配置，当前解析路线仍为后端模型');
+    });
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+      localStorage.removeItem('evolink_key');
+      keyEl.value = '';
+      if (directEl) {
+        directEl.checked = false;
+        localStorage.setItem(EVOLINK_DIRECT_MODE_KEY, '0');
+      }
+      refresh();
+      setStatus('已清除 EvoLink Key，并切回后端模型');
+    });
+  }
+
+  api.getItems().then((items) => {
+    (items || []).forEach(item => resources.set(item.id, item));
+    render();
+  });
+  restoreDownloadDir();
+  setAnalysisDir(analysisDir);
+  setupBackButton();
+  setupEvolinkConfig();
+  initAnalysisEnabledMode();
+  initAutoAnalyzeMode();
+  updateAnalysisUi(false);
+  updateRetryUi();
+  renderSkipNotices();
+})();
+</script>
+</body>
+</html>
