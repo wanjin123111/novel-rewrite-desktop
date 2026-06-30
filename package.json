@@ -1,6 +1,6 @@
 {
     "name": "novel-rewrite-desktop",
-    "version": "0.1.79",
+    "version": "0.1.80",
     "description": "改文 · 小说去AI味 桌面客户端（Electron）",
     "main": "main.js",
     "author": "",
@@ -59,7 +59,8 @@
             {
                 "provider": "github",
                 "owner": "wanjin123111",
-                "repo": "novel-rewrite-desktop"
+                "repo": "novel-rewrite-desktop",
+                "releaseType": "release"
             }
         ],
         "artifactName": "novel-rewrite-desktop-setup-${version}.${ext}"
