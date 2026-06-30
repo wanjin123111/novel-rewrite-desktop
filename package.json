@@ -1,6 +1,6 @@
 {
     "name": "novel-rewrite-desktop",
-    "version": "0.1.53",
+    "version": "0.1.79",
     "description": "改文 · 小说去AI味 桌面客户端（Electron）",
     "main": "main.js",
     "author": "",
@@ -26,10 +26,12 @@
         "files": [
             "main.js",
             "renderer/**/*",
-            "package.json"
+            "package.json",
+            "bin/**/*"
         ],
         "asarUnpack": [
-            "node_modules/ffmpeg-static/**/*"
+            "node_modules/ffmpeg-static/**/*",
+            "bin/**/*"
         ],
         "win": {
             "target": [

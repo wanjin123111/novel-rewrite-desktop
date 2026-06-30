@@ -22,6 +22,7 @@
   html, body {
     height: 100%;
     margin: 0;
+    overflow: hidden;
     background: var(--paper);
     color: var(--ink);
     font: 14px/1.5 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
@@ -35,7 +36,7 @@
   }
   .topbar {
     display: grid;
-    grid-template-columns: auto auto 1fr auto auto auto auto;
+    grid-template-columns: auto auto minmax(220px, 1fr) auto auto auto auto auto;
     gap: 8px;
     align-items: center;
     padding: 10px 12px;
@@ -90,6 +91,7 @@
   .btn:disabled { opacity: .45; cursor: default; }
   .main {
     min-height: 0;
+    overflow: hidden;
     display: grid;
     grid-template-columns: minmax(520px, 1fr) 420px;
     border-bottom: 1px solid var(--rule);
@@ -144,6 +146,9 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 38px;
     background: #f8f2e7;
   }
   .capture-head {
@@ -267,7 +272,7 @@
   /* —— 导出解析合集行 —— */
   .export-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     gap: 6px;
     padding: 0 12px 10px;
   }
@@ -276,6 +281,20 @@
     height: 32px;
     cursor: pointer;
     appearance: auto;
+  }
+  .split-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 96px auto;
+    gap: 6px;
+    padding: 0 12px 10px;
+  }
+  .split-row .download-path {
+    height: 32px;
+  }
+  .split-row .btn {
+    min-width: 0;
+    padding: 0 14px;
+    white-space: nowrap;
   }
 
   /* —— 折叠抽屉（与下方“直连设置”同款卡片）—— */
@@ -379,8 +398,9 @@
     border-color: var(--ink-soft);
   }
   .list {
-    flex: 1 1 auto;
-    min-height: 0;
+    flex: 0 0 auto;
+    min-height: 220px;
+    max-height: 42vh;
     overflow: auto;
     padding: 8px 10px 14px;
   }
@@ -490,6 +510,33 @@
   .evolink-route input { width: 16px; height: 16px; accent-color: var(--vermillion); }
   .evolink-route strong { color: var(--ink); }
   .evolink-route em { margin-left: auto; font-style: normal; color: #9a8d73; font-size: 12px; }
+  .tikhub-grid { display: grid; grid-template-columns: 120px 150px minmax(0, 1fr); gap: 8px; }
+  .tikhub-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tikhub-result { min-height: 72px; max-height: 190px; overflow: auto; padding: 8px 10px; border: 1px solid #d9cfb8; border-radius: 6px; background: rgba(255,255,255,.58); color: var(--ink-soft); font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+  .tikhub-status { font-size: 12px; color: #8a7f66; }
+  .tikhub-status.ok { color: #2e7d32; }
+  .radar-grid { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 8px; align-items: stretch; }
+  .radar-accounts { min-height: 92px; }
+  .radar-list { max-height: 280px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+  .radar-card { border: 1px solid #e3d8c4; border-radius: 6px; background: #fffdf6; padding: 8px 10px; }
+  .radar-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .radar-rank { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 24px; padding: 0 6px; background: var(--vermillion); color: #fff; font-weight: 700; font-size: 12px; }
+  .radar-title { min-width: 0; flex: 1; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .radar-level { font-size: 12px; color: #a83232; white-space: nowrap; }
+  .radar-meta { font-size: 12px; color: #8a7f66; line-height: 1.55; word-break: break-word; }
+  .radar-metrics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .radar-pill { border: 1px solid #e4d8c2; background: #fbf8f0; padding: 2px 6px; font-size: 12px; color: #6f6049; }
+  .radar-empty { padding: 14px 10px; border: 1px dashed #d9cfb8; color: #9a8d73; text-align: center; font-size: 13px; }
+  .radar-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+  .radar-stat { border:1px solid #e3d8c4; background:#fffdf6; padding:7px 8px; min-height:54px; }
+  .radar-stat b { display:block; font-size:18px; line-height:1.1; }
+  .radar-stat span { color:#8b7b65; font-size:11px; }
+  .radar-login-hint { border:1px dashed #d8cab3; background:#fffaf1; color:#74634f; padding:8px 10px; font-size:12px; }
+  .radar-table-wrap { max-height:360px; overflow:auto; border:1px solid #e3d8c4; background:#fffdf6; }
+  .radar-table { width:max-content; min-width:100%; border-collapse:collapse; font-size:12px; }
+  .radar-table th,.radar-table td { border:1px solid #eadfcf; padding:6px 7px; vertical-align:top; max-width:230px; word-break:break-word; }
+  .radar-table th { position:sticky; top:0; z-index:1; background:#eee3d2; color:#5d4938; text-align:left; }
+  .radar-table td.num { text-align:right; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -501,6 +548,7 @@
     <button class="btn" id="backBtn" type="button" title="后退">←</button>
     <button class="btn" id="forwardBtn" type="button" title="前进">→</button>
     <button class="btn" id="reloadBtn" type="button" title="刷新">↻</button>
+    <button class="btn" id="openInfoScraperBtn" type="button" title="在当前页展开信息抓取">信息抓取</button>
     <button class="btn primary" type="submit">访问</button>
   </form>
 
@@ -553,6 +601,12 @@
     <button class="btn" id="chooseAnalysisFilesBtn" type="button">选视频</button>
   </div>
 
+  <div class="split-row">
+    <input class="download-path" id="splitHintInput" value="长视频切分" readonly />
+    <input class="download-path" id="splitMinutesInput" type="number" min="1" max="720" step="1" title="每段分钟数" />
+    <button class="btn" id="splitVideosBtn" type="button">切分视频</button>
+  </div>
+
   <div class="export-row">
         <select class="download-path" id="exportFormatSelect" title="选择导出格式">
           <option value="docx">Word（.docx）</option>
@@ -564,6 +618,7 @@
           <option value="json">JSON（.json）</option>
         </select>
         <button class="btn" id="retryMissingAnalysisBtn" type="button">补漏解析</button>
+        <button class="btn" id="mergeAnalysesBtn" type="button" title="只读取目录里的解析 txt，按集数合并成一个合集文档">整合合集</button>
         <button class="btn primary" id="exportAnalysesBtn" type="button">导出解析</button>
       </div>
 
@@ -577,6 +632,63 @@
           <div class="input-row">
             <input class="download-path" id="manualM3u8Input" placeholder="手动粘贴付费集的 m3u8 链接（可从浏览器开发者工具获取）" />
             <button class="btn primary" id="manualDownloadBtn" type="button">下载该集</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="evolink-config" id="tikhubConfig" hidden>
+        <summary>TikHub 信息抓取（配置 Key 后可用）</summary>
+        <div class="evolink-fields">
+          <input class="download-path" id="tikhubKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="TikHub API Key" />
+          <div class="tikhub-grid">
+            <select class="download-path" id="tikhubPlatformSelect" title="接口平台">
+              <option value="auto">自动识别</option>
+              <option value="tiktok">TikTok</option>
+              <option value="douyin">抖音</option>
+            </select>
+            <select class="download-path" id="tikhubResourceTypeSelect" title="链接类型">
+              <option value="auto">自动识别类型</option>
+              <option value="video">单条视频</option>
+              <option value="user">用户主页/账号</option>
+            </select>
+            <input class="download-path" id="tikhubShareUrlInput" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴 TikTok/抖音视频或主页链接；留空则用地址栏链接" />
+          </div>
+          <input class="download-path" id="tikhubEndpointInput" type="text" autocomplete="off" spellcheck="false" placeholder="可选：自定义 endpoint，例如视频接口 /api/v1/tiktok/web/fetch_one_video_v2，主页可填用户接口" />
+          <div class="tikhub-actions">
+            <button class="btn primary" id="tikhubFetchBtn" type="button">抓取信息</button>
+            <button class="btn" id="tikhubSaveBtn" type="button">保存 Key</button>
+            <button class="btn" id="tikhubClearBtn" type="button">清除</button>
+            <span class="tikhub-status" id="tikhubStatus"></span>
+          </div>
+          <pre class="tikhub-result" id="tikhubResult">TikHub 返回的信息会显示在这里。</pre>
+        </div>
+      </details>
+
+      <details class="evolink-config" id="dramaRadarConfig" hidden>
+        <summary>信息抓取（TikTok / 抖音账号监控）</summary>
+        <div class="evolink-fields">
+          <div class="radar-grid">
+            <textarea class="radar-accounts" id="radarAccountInput" placeholder="一行一个 TikTok / 抖音账号主页或作品链接，例如：https://www.tiktok.com/@drama_account"></textarea>
+            <input class="download-path" id="radarLimitInput" type="number" min="1" max="100" step="1" title="每个账号最多取多少条作品" />
+          </div>
+          <div class="tikhub-actions">
+            <button class="btn primary" id="radarRefreshBtn" type="button">立即抓取全部</button>
+            <button class="btn" id="radarSaveBtn" type="button">保存账号</button>
+            <button class="btn" id="radarLoginBtn" type="button">登录 TikTok</button>
+            <button class="btn" id="radarCheckLoginBtn" type="button">检测登录</button>
+            <button class="btn" id="radarExportBtn" type="button">导出对标表格</button>
+            <button class="btn" id="radarClearBtn" type="button">清空输入</button>
+          </div>
+          <span class="tikhub-status" id="radarStatus">保存账号后可立即抓取；抓取时会读取内置浏览器可见作品。</span>
+          <div class="radar-login-hint" id="radarLoginHint">TikTok 登录态：未检测。</div>
+          <div class="radar-stats">
+            <div class="radar-stat"><b id="radarAccountCount">0</b><span>保存账号</span></div>
+            <div class="radar-stat"><b id="radarVideoCount">0</b><span>最近抓到作品</span></div>
+            <div class="radar-stat"><b id="radarNewCount">0</b><span>本轮新作品</span></div>
+            <div class="radar-stat"><b id="radarGrowthCount">0</b><span>有热度增长</span></div>
+          </div>
+          <div class="radar-list" id="radarResult">
+            <div class="radar-empty">填入短剧账号后刷新，会按播放、互动和本地涨幅生成爆款候选榜。</div>
           </div>
         </div>
       </details>
@@ -656,11 +768,18 @@
   const ANALYSIS_DIR_KEY = 'gaiwen-video-analysis-dir';
   const ANALYSIS_ENABLED_KEY = 'gaiwen-video-analysis-enabled';
   const AUTO_ANALYZE_KEY = 'gaiwen-video-auto-analyze';
+  const VIDEO_SPLIT_MINUTES_KEY = 'gaiwen-video-split-minutes';
+  const TIKHUB_KEY = 'gaiwen-video-tikhub-key';
+  const TIKHUB_PLATFORM_KEY = 'gaiwen-video-tikhub-platform';
+  const TIKHUB_RESOURCE_TYPE_KEY = 'gaiwen-video-tikhub-resource-type';
+  const TIKHUB_ENDPOINT_KEY = 'gaiwen-video-tikhub-endpoint';
+  const DRAMA_RADAR_ACCOUNTS_KEY = 'gaiwen-video-drama-radar-accounts';
+  const DRAMA_RADAR_LIMIT_KEY = 'gaiwen-video-drama-radar-limit';
   const FAILED_BATCH_KEY = 'gaiwen-video-failed-batch-items';
   const SKIP_NOTICE_KEY = 'gaiwen-video-skip-notices';
   const NO_VIDEO_SKIP_REASON = '连续 3 次切集/播放都没有抓到视频内容，已跳过这条链接';
-  const AUTO_ANALYZE_CONCURRENCY = 3;
-  const MANUAL_ANALYZE_CONCURRENCY = 3;
+  const AUTO_ANALYZE_CONCURRENCY = 20;
+  const MANUAL_ANALYZE_CONCURRENCY = 20;
   const VIDEO_ANALYZE_MAX_RETRIES = 3;
   const VIDEO_ANALYZE_RETRY_DELAY_MS = 5000;
   const EPISODE_CAPTURE_TIMEOUT_MS = 45000;
@@ -705,6 +824,7 @@
   let analysisRunning = false;
   let analysisAbort = false;
   let analysisSelectedFiles = [];
+  let splitRunning = false;
   const autoAnalysisJobs = new Map();
   let autoAnalysisQueue = Promise.resolve();
   let inputModalOpen = false;
@@ -830,6 +950,9 @@
     const stopBtn = $('stopAnalysisBtn');
     const chooseFilesBtn = $('chooseAnalysisFilesBtn');
     const retryMissingBtn = $('retryMissingAnalysisBtn');
+    const mergeBtn = $('mergeAnalysesBtn');
+    const splitBtn = $('splitVideosBtn');
+    const splitMinutesInput = $('splitMinutesInput');
     const autoAnalyzeInput = $('autoAnalyzeModeInput');
     if (analyzeBtn) {
       analyzeBtn.disabled = !enabled || analysisRunning;
@@ -838,6 +961,12 @@
     if (stopBtn) stopBtn.disabled = !analysisRunning;
     if (chooseFilesBtn) chooseFilesBtn.disabled = analysisRunning;
     if (retryMissingBtn) retryMissingBtn.disabled = !enabled || analysisRunning;
+    if (mergeBtn) mergeBtn.disabled = analysisRunning;
+    if (splitBtn) {
+      splitBtn.disabled = analysisRunning || splitRunning;
+      splitBtn.textContent = splitRunning ? '切分中' : '切分视频';
+    }
+    if (splitMinutesInput) splitMinutesInput.disabled = analysisRunning || splitRunning;
     if (autoAnalyzeInput) autoAnalyzeInput.disabled = !enabled;
     const hint = $('analysisHint');
     if (hint) {
@@ -1117,7 +1246,11 @@
             silent: true,
           });
           if (exported && exported.ok) {
-            logAnalysis(`自动模式：${taskName} 已导出 ${exported.count} 集合集：${exported.outputPath}（缓存目录里的 txt 是内部中间文件）`);
+            if (exported.groupCount > 1 && Array.isArray(exported.outputPaths)) {
+              logAnalysis(`自动模式：${taskName} 已按 ${exported.groupCount} 个文件夹分别导出合集，共 ${exported.count} 集。首个文件：${exported.outputPaths[0]}（缓存目录里的 txt 是内部中间文件）`);
+            } else {
+              logAnalysis(`自动模式：${taskName} 已导出 ${exported.count} 集合集：${exported.outputPath}（缓存目录里的 txt 是内部中间文件）`);
+            }
           } else {
             logAnalysis(`自动模式：${taskName} 合集导出失败：${exported && exported.error ? exported.error : '未知错误'}`);
           }
@@ -1215,10 +1348,16 @@
           title: activeSeriesTitle || folderNameOfPath(rootDir) || '视频解析合集',
           filePaths: analysisSelectedFiles.length ? files.map(file => file.path) : undefined,
           silent: true,
+          splitByFolder: !analysisSelectedFiles.length,
         });
         if (exported && exported.ok) {
-          logAnalysis(`已导出 ${exported.count} 集合集：${exported.outputPath}`);
-          setStatus(`已导出 ${exported.format} 合集：${exported.outputPath}`);
+          if (exported.groupCount > 1 && Array.isArray(exported.outputPaths)) {
+            logAnalysis(`已按 ${exported.groupCount} 个文件夹分别导出合集，共 ${exported.count} 集。首个文件：${exported.outputPaths[0]}`);
+            setStatus(`已分别导出 ${exported.groupCount} 个合集`);
+          } else {
+            logAnalysis(`已导出 ${exported.count} 集合集：${exported.outputPath}`);
+            setStatus(`已导出 ${exported.format} 合集：${exported.outputPath}`);
+          }
         } else {
           logAnalysis(`合集导出失败：${exported && exported.error ? exported.error : '未知错误'}`);
         }
@@ -1240,7 +1379,116 @@
     }
   }
 
-  async function exportAnalyses() {
+  function initVideoSplitUi() {
+    const input = $('splitMinutesInput');
+    if (!input) return;
+    const saved = Math.max(1, Math.min(720, Math.round(Number(localStorage.getItem(VIDEO_SPLIT_MINUTES_KEY)) || 10)));
+    input.value = String(saved);
+    const persist = () => {
+      const minutes = selectedSplitMinutes();
+      input.value = String(minutes);
+      localStorage.setItem(VIDEO_SPLIT_MINUTES_KEY, String(minutes));
+    };
+    input.addEventListener('change', persist);
+    input.addEventListener('blur', persist);
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        persist();
+        input.blur();
+      }
+    });
+  }
+
+  function selectedSplitMinutes() {
+    const input = $('splitMinutesInput');
+    return Math.max(1, Math.min(720, Math.round(Number(input && input.value) || 10)));
+  }
+
+  function isSplitGeneratedVideo(file) {
+    const text = String((file && (file.path || file.name)) || '');
+    return /[\\\/][^\\\/]+-切分[\\\/]/.test(text) || /-part-\d{3}\.[a-z0-9]+$/i.test(text);
+  }
+
+  async function splitSavedVideos() {
+    if (splitRunning) return;
+    if (!api || !api.splitVideoFile) {
+      setStatus('当前安装包缺少视频切分接口，请重新打包安装', 'error');
+      logAnalysis('当前安装包缺少 splitVideoFile 接口，请确认 main.js 和 preload 已更新。', 'replace');
+      return;
+    }
+    const rootDir = await analysisRootDir();
+    if (!rootDir) {
+      setStatus('请先选择视频目录或视频文件', 'error');
+      return;
+    }
+    const minutes = selectedSplitMinutes();
+    localStorage.setItem(VIDEO_SPLIT_MINUTES_KEY, String(minutes));
+    const segmentSeconds = minutes * 60;
+
+    splitRunning = true;
+    updateAnalysisUi(analysisRunning);
+    logAnalysis(`开始准备切分视频 · 每段 ${minutes} 分钟`, 'replace');
+
+    try {
+      let files = analysisSelectedFiles.length ? analysisSelectedFiles.slice() : [];
+      if (!files.length) {
+        if (!api.listVideoFiles) throw new Error('当前安装包缺少读取视频目录接口');
+        const listed = await api.listVideoFiles(rootDir);
+        if (!listed || !listed.ok) throw new Error(listed && listed.error ? listed.error : '读取视频目录失败');
+        files = Array.isArray(listed.files) ? listed.files : [];
+      }
+      files = files.filter(file => file && file.path && !isSplitGeneratedVideo(file));
+      if (!files.length) {
+        logAnalysis('没有找到可切分的视频文件，或当前目录里只有已经切过的片段');
+        setStatus('没有找到可切分的视频', 'error');
+        return;
+      }
+
+      const batchOutputRoot = files.length > 1 ? joinPath(rootDir, '视频切分-' + stampForFolder()) : '';
+      if (batchOutputRoot) logAnalysis(`本次多视频切分输出到：${batchOutputRoot}`);
+
+      let ok = 0;
+      let failed = 0;
+      const outputDirs = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        logAnalysis(`切分 ${i + 1}/${files.length}：${file.name || file.path}`);
+        const result = await api.splitVideoFile({
+          filePath: file.path,
+          segmentSeconds,
+          outputDir: batchOutputRoot || undefined,
+        });
+        if (result && result.ok) {
+          ok++;
+          outputDirs.push(result.outputDir);
+          logAnalysis(`切分完成：${result.count} 段 → ${result.outputDir}`);
+        } else {
+          failed++;
+          logAnalysis(`切分失败：${file.name || file.path} · ${result && result.error ? result.error : '未知错误'}`);
+        }
+      }
+
+      if (ok > 0) {
+        clearAnalysisSelectedFiles();
+        setAnalysisDir(batchOutputRoot || outputDirs[0]);
+        logAnalysis(`切分结束 · 成功 ${ok} 个视频 · 失败 ${failed} 个。解析目录已切到：${batchOutputRoot || outputDirs[0]}`);
+        setStatus(`切分完成：成功 ${ok} 个视频`);
+      } else {
+        logAnalysis(`切分结束 · 成功 0 个视频 · 失败 ${failed} 个`);
+        setStatus('切分失败', 'error');
+      }
+    } catch (err) {
+      logAnalysis('切分视频出错：' + (err && err.message ? err.message : err));
+      setStatus('切分视频出错', 'error');
+    } finally {
+      splitRunning = false;
+      updateAnalysisUi(analysisRunning);
+    }
+  }
+
+  async function exportAnalyses(opts) {
+    const options = opts && !opts.currentTarget ? opts : {};
+    const mergeOnly = !!options.mergeOnly;
     if (!api || !api.exportAnalyses) {
       setStatus('当前安装包缺少导出接口，请重新打包', 'error');
       logAnalysis('当前安装包缺少导出接口（exportAnalyses），请确认 main.js 和 preload 也更新了', 'replace');
@@ -1252,19 +1500,21 @@
       return;
     }
     const format = selectedExportFormat();
-    const btn = $('exportAnalysesBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '导出中…'; }
-    logAnalysis(`开始导出解析合集（${format}）· ${analysisSelectedFiles.length ? '选中视频 ' + analysisSelectedFiles.length + ' 个' : '目录：' + rootDir}`);
+    const btn = mergeOnly ? $('mergeAnalysesBtn') : $('exportAnalysesBtn');
+    const oldText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = mergeOnly ? '整合中…' : '导出中…'; }
+    logAnalysis(`${mergeOnly ? '开始整合目录里的解析 txt' : '开始导出解析合集'}（${format}）· ${analysisSelectedFiles.length ? '选中视频 ' + analysisSelectedFiles.length + ' 个' : '目录：' + rootDir}${mergeOnly ? ' · 不重新解析视频' : ''}`);
     try {
       const result = await api.exportAnalyses({
         rootDir,
         format,
         title: activeSeriesTitle || folderNameOfPath(rootDir) || '视频解析合集',
-        filePaths: analysisSelectedFiles.length ? analysisSelectedFiles.map(file => file.path) : undefined,
+        mergeCurrentDirOnly: mergeOnly,
+        filePaths: (!mergeOnly && analysisSelectedFiles.length) ? analysisSelectedFiles.map(file => file.path) : undefined,
       });
       if (result && result.ok) {
         logAnalysis(`已导出 ${result.count} 集 → ${result.outputPath}`);
-        setStatus(`导出成功（${result.format}）：${result.outputPath}`);
+        setStatus(`${mergeOnly ? '整合成功' : '导出成功'}（${result.format}）：${result.outputPath}`);
       } else if (result && result.canceled) {
         logAnalysis('已取消导出');
         setStatus('已取消导出');
@@ -1276,7 +1526,7 @@
       logAnalysis('导出出错：' + (err && err.message ? err.message : err));
       setStatus('导出出错', 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '导出解析'; }
+      if (btn) { btn.disabled = false; btn.textContent = oldText || (mergeOnly ? '整合合集' : '导出解析'); }
     }
   }
 
@@ -4159,6 +4409,7 @@
   $('importLinksBtn').addEventListener('click', importLinksFile);
   $('retryFailedBtn').addEventListener('click', retryFailedLinks);
   $('downloadAllBtn').addEventListener('click', downloadEpisodeRange);
+  $('splitVideosBtn').addEventListener('click', splitSavedVideos);
   $('clearBtn').addEventListener('click', async () => {
     resources.clear();
     render();
@@ -4265,6 +4516,7 @@
   $('analyzeVideosBtn').addEventListener('click', analyzeSavedVideos);
   $('stopAnalysisBtn').addEventListener('click', stopVideoAnalysis);
   $('retryMissingAnalysisBtn').addEventListener('click', () => analyzeSavedVideos({ missingOnly: true }));
+  $('mergeAnalysesBtn').addEventListener('click', () => exportAnalyses({ mergeOnly: true }));
   $('exportAnalysesBtn').addEventListener('click', exportAnalyses);
 
   if (!api) {
@@ -4359,6 +4611,473 @@
     });
   }
 
+  function tikhubCurrentShareUrl() {
+    const fromBox = (($('tikhubShareUrlInput') && $('tikhubShareUrlInput').value) || '').trim();
+    return normalizeUrl(fromBox || $('addressInput').value || lastState.url || '');
+  }
+
+  function findFirstDeep(obj, keys, depth) {
+    if (!obj || typeof obj !== 'object' || depth > 6) return '';
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] != null && obj[key] !== '') {
+        return obj[key];
+      }
+    }
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const found = findFirstDeep(item, keys, depth + 1);
+        if (found !== '') return found;
+      }
+      return '';
+    }
+    for (const value of Object.values(obj)) {
+      const found = findFirstDeep(value, keys, depth + 1);
+      if (found !== '') return found;
+    }
+    return '';
+  }
+
+  function tikhubSummary(data) {
+    const root = data && data.data ? data.data : data;
+    const title = findFirstDeep(root, ['desc', 'description', 'title', 'text'], 0);
+    const author = findFirstDeep(root, ['nickname', 'unique_id', 'sec_uid', 'short_id', 'author'], 0);
+    const play = findFirstDeep(root, ['play_count', 'playCount', 'view_count', 'viewCount'], 0);
+    const like = findFirstDeep(root, ['digg_count', 'like_count', 'likeCount'], 0);
+    const comment = findFirstDeep(root, ['comment_count', 'commentCount'], 0);
+    const share = findFirstDeep(root, ['share_count', 'shareCount'], 0);
+    const awemeId = findFirstDeep(root, ['aweme_id', 'awemeId', 'id'], 0);
+    const lines = [];
+    if (title) lines.push('标题/文案: ' + String(title).slice(0, 300));
+    if (author) lines.push('作者: ' + author);
+    if (awemeId) lines.push('作品 ID: ' + awemeId);
+    const stats = [];
+    if (play !== '') stats.push('播放 ' + play);
+    if (like !== '') stats.push('点赞 ' + like);
+    if (comment !== '') stats.push('评论 ' + comment);
+    if (share !== '') stats.push('分享 ' + share);
+    if (stats.length) lines.push('数据: ' + stats.join(' / '));
+    return lines.join('\n');
+  }
+
+  async function fetchTikhubInfo() {
+    const keyEl = $('tikhubKeyInput');
+    const resultEl = $('tikhubResult');
+    const statusEl = $('tikhubStatus');
+    const btn = $('tikhubFetchBtn');
+    const apiKey = ((keyEl && keyEl.value) || localStorage.getItem(TIKHUB_KEY) || '').trim();
+    const shareUrl = tikhubCurrentShareUrl();
+    if (!apiKey) {
+      setStatus('请先填写 TikHub API Key', 'error');
+      if (statusEl) statusEl.textContent = '缺少 Key';
+      return;
+    }
+    if (!shareUrl) {
+      setStatus('请先粘贴 TikTok/抖音分享链接', 'error');
+      if (statusEl) statusEl.textContent = '缺少链接';
+      return;
+    }
+    if (!api || !api.fetchTikhubInfo) {
+      setStatus('当前安装包缺少 TikHub 抓取接口，请重新启动开发版', 'error');
+      return;
+    }
+    localStorage.setItem(TIKHUB_KEY, apiKey);
+    localStorage.setItem(TIKHUB_PLATFORM_KEY, $('tikhubPlatformSelect') ? $('tikhubPlatformSelect').value : 'auto');
+    localStorage.setItem(TIKHUB_RESOURCE_TYPE_KEY, $('tikhubResourceTypeSelect') ? $('tikhubResourceTypeSelect').value : 'auto');
+    const endpoint = (($('tikhubEndpointInput') && $('tikhubEndpointInput').value) || '').trim();
+    if (endpoint) localStorage.setItem(TIKHUB_ENDPOINT_KEY, endpoint); else localStorage.removeItem(TIKHUB_ENDPOINT_KEY);
+    if (btn) btn.disabled = true;
+    if (statusEl) {
+      statusEl.textContent = '正在请求 TikHub...';
+      statusEl.className = 'tikhub-status';
+    }
+    if (resultEl) resultEl.textContent = '请求中...';
+    try {
+      const res = await api.fetchTikhubInfo({
+        apiKey,
+        shareUrl,
+        platform: $('tikhubPlatformSelect') ? $('tikhubPlatformSelect').value : 'auto',
+        resourceType: $('tikhubResourceTypeSelect') ? $('tikhubResourceTypeSelect').value : 'auto',
+        endpoint,
+      });
+      if (!res || !res.ok) {
+        const msg = (res && res.error) || 'TikHub 抓取失败';
+        if (resultEl) resultEl.textContent = JSON.stringify(res || { error: msg }, null, 2);
+        if (statusEl) statusEl.textContent = msg;
+        setStatus(msg, 'error');
+        return;
+      }
+      const summary = tikhubSummary(res.data);
+      const body = JSON.stringify(res.data || res.rawText || {}, null, 2);
+      if (resultEl) resultEl.textContent = (summary ? summary + '\n\n' : '') + body;
+      if (statusEl) {
+        const typeLabel = res.resourceType === 'user' ? '用户主页' : '单条视频';
+        statusEl.textContent = '抓取成功 · ' + typeLabel + ' · ' + (res.endpoint || '');
+        statusEl.className = 'tikhub-status ok';
+      }
+      logTask('TikHub 信息抓取成功：' + shareUrl);
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      if (resultEl) resultEl.textContent = msg;
+      if (statusEl) statusEl.textContent = msg;
+      setStatus('TikHub 抓取失败：' + msg, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function setupTikhubConfig() {
+    const keyEl = $('tikhubKeyInput');
+    const platformEl = $('tikhubPlatformSelect');
+    const resourceTypeEl = $('tikhubResourceTypeSelect');
+    const endpointEl = $('tikhubEndpointInput');
+    const statusEl = $('tikhubStatus');
+    const saveBtn = $('tikhubSaveBtn');
+    const clearBtn = $('tikhubClearBtn');
+    const fetchBtn = $('tikhubFetchBtn');
+    if (!keyEl || !fetchBtn) return;
+    keyEl.value = localStorage.getItem(TIKHUB_KEY) || '';
+    if (platformEl) platformEl.value = localStorage.getItem(TIKHUB_PLATFORM_KEY) || 'auto';
+    if (resourceTypeEl) resourceTypeEl.value = localStorage.getItem(TIKHUB_RESOURCE_TYPE_KEY) || 'auto';
+    if (endpointEl) endpointEl.value = localStorage.getItem(TIKHUB_ENDPOINT_KEY) || '';
+    if (statusEl) {
+      const hasKey = !!keyEl.value.trim();
+      statusEl.textContent = hasKey ? 'Key 已配置，可以抓取' : '未配置 Key';
+      statusEl.className = 'tikhub-status' + (hasKey ? ' ok' : '');
+    }
+    fetchBtn.addEventListener('click', fetchTikhubInfo);
+    if (saveBtn) saveBtn.addEventListener('click', () => {
+      const key = (keyEl.value || '').trim();
+      if (key) localStorage.setItem(TIKHUB_KEY, key); else localStorage.removeItem(TIKHUB_KEY);
+      if (platformEl) localStorage.setItem(TIKHUB_PLATFORM_KEY, platformEl.value || 'auto');
+      if (resourceTypeEl) localStorage.setItem(TIKHUB_RESOURCE_TYPE_KEY, resourceTypeEl.value || 'auto');
+      if (endpointEl && endpointEl.value.trim()) localStorage.setItem(TIKHUB_ENDPOINT_KEY, endpointEl.value.trim());
+      else localStorage.removeItem(TIKHUB_ENDPOINT_KEY);
+      if (statusEl) {
+        statusEl.textContent = key ? 'Key 已保存' : 'Key 已清空';
+        statusEl.className = 'tikhub-status' + (key ? ' ok' : '');
+      }
+      setStatus(key ? '已保存 TikHub Key' : '已清空 TikHub Key');
+    });
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+      localStorage.removeItem(TIKHUB_KEY);
+      localStorage.removeItem(TIKHUB_ENDPOINT_KEY);
+      localStorage.removeItem(TIKHUB_RESOURCE_TYPE_KEY);
+      keyEl.value = '';
+      if (endpointEl) endpointEl.value = '';
+      if (platformEl) platformEl.value = 'auto';
+      if (resourceTypeEl) resourceTypeEl.value = 'auto';
+      if (statusEl) {
+        statusEl.textContent = '已清除 TikHub 配置';
+        statusEl.className = 'tikhub-status';
+      }
+      setStatus('已清除 TikHub 配置');
+    });
+  }
+
+  function radarAccountsFromText(text) {
+    return (String(text || '').match(/https?:\/\/[^\s"'<>，。；、]+/gi) || []).map(normalizeUrl).filter(Boolean);
+  }
+
+  function radarFormatNumber(value) {
+    const n = Number(value) || 0;
+    if (n >= 100000000) return (n / 100000000).toFixed(n >= 1000000000 ? 1 : 2).replace(/\.0+$/, '') + '亿';
+    if (n >= 10000) return (n / 10000).toFixed(n >= 100000 ? 1 : 2).replace(/\.0+$/, '') + '万';
+    return new Intl.NumberFormat('zh-CN').format(Math.round(n));
+  }
+
+  function radarFormatPercent(value) {
+    const n = Number(value) || 0;
+    if (!n) return '0%';
+    return (n * 100).toFixed(n >= 0.1 ? 1 : 2).replace(/\.0+$/, '') + '%';
+  }
+
+  let embeddedInfoState = null;
+  let embeddedInfoLoginStatus = null;
+  let embeddedInfoBusy = false;
+
+  function radarFormatTime(value) {
+    if (!value) return '未刷新';
+    try { return new Date(value).toLocaleString('zh-CN', { hour12: false }); } catch (err) { return String(value); }
+  }
+
+  function radarSetBusy(value) {
+    embeddedInfoBusy = value;
+    ['radarRefreshBtn', 'radarSaveBtn', 'radarExportBtn'].forEach(id => {
+      const el = $(id);
+      if (el) el.disabled = value;
+    });
+    const refreshBtn = $('radarRefreshBtn');
+    if (refreshBtn) refreshBtn.textContent = value ? '抓取中...' : '立即抓取全部';
+  }
+
+  function radarRowsFromState() {
+    return embeddedInfoState && Array.isArray(embeddedInfoState.bilingualRows) ? embeddedInfoState.bilingualRows : [];
+  }
+
+  function radarAccountsFromState() {
+    return embeddedInfoState && Array.isArray(embeddedInfoState.accounts) ? embeddedInfoState.accounts : [];
+  }
+
+  function radarUpdateLoginHint() {
+    const hint = $('radarLoginHint');
+    if (!hint) return;
+    const login = embeddedInfoLoginStatus || (embeddedInfoState && embeddedInfoState.loginStatus) || {};
+    let text = 'TikTok 登录态：未检测；如果作品不全，请先点“登录 TikTok”手动登录。';
+    if (login.loggedIn) text = 'TikTok 登录态：已检测到，静默抓取会复用这个账号会话。';
+    else if (login.hasTikTokCookies) text = 'TikTok 登录态：有会话 Cookie，但未确认登录；如果作品不全，请点“登录 TikTok”。';
+    if (login.checkedAt) text += ' 检测时间：' + radarFormatTime(login.checkedAt);
+    hint.textContent = text;
+  }
+
+  function renderDramaRadar() {
+    const resultEl = $('radarResult');
+    if (!resultEl) return;
+    const accounts = radarAccountsFromState();
+    const videos = embeddedInfoState && Array.isArray(embeddedInfoState.videos) ? embeddedInfoState.videos : [];
+    const rows = radarRowsFromState();
+    const newCount = accounts.reduce((sum, item) => sum + (Number(item.lastNewCount) || 0), 0);
+    const growthCount = accounts.reduce((sum, item) => sum + (Number(item.lastGrowthCount) || 0), 0);
+    const accountCountEl = $('radarAccountCount');
+    const videoCountEl = $('radarVideoCount');
+    const newCountEl = $('radarNewCount');
+    const growthCountEl = $('radarGrowthCount');
+    if (accountCountEl) accountCountEl.textContent = String(accounts.length);
+    if (videoCountEl) videoCountEl.textContent = String(videos.length);
+    if (newCountEl) newCountEl.textContent = String(newCount);
+    if (growthCountEl) growthCountEl.textContent = String(growthCount);
+    const limitEl = $('radarLimitInput');
+    if (limitEl && embeddedInfoState && embeddedInfoState.maxVideos && !document.activeElement.isSameNode(limitEl)) {
+      limitEl.value = String(embeddedInfoState.maxVideos);
+    }
+    radarUpdateLoginHint();
+    const accountHtml = accounts.length ? accounts.map(account => {
+      const id = escapeAttr(account.id || '');
+      const url = escapeAttr(account.url || '');
+      const label = escapeAttr(account.label || account.url || '未命名账号');
+      const error = account.lastError ? ' · <span class="radar-level">' + escapeAttr(account.lastError) + '</span>' : '';
+      const partial = account.lastPartialNote ? ' · <span class="radar-level">' + escapeAttr(account.lastPartialNote) + '</span>' : '';
+      return '<div class="radar-card">' +
+        '<div class="radar-card-head"><span class="radar-rank">@</span><div class="radar-title">' + label + '</div><span class="radar-level">' + (account.enabled === false ? '已停用' : '启用中') + '</span></div>' +
+        '<div class="radar-meta">' + url + '<br>上次：' + escapeAttr(radarFormatTime(account.lastPolledAt)) + error + partial + '</div>' +
+        '<div class="radar-metrics">' +
+        '<span class="radar-pill">作品 ' + radarFormatNumber(account.lastVideoCount) + '</span>' +
+        '<span class="radar-pill">新 ' + radarFormatNumber(account.lastNewCount) + '</span>' +
+        '<span class="radar-pill">增长 ' + radarFormatNumber(account.lastGrowthCount) + '</span>' +
+        '</div>' +
+        '<div class="tikhub-actions" style="margin-top:8px;">' +
+        '<button class="btn" type="button" data-radar-action="refresh" data-id="' + id + '">立即抓取</button>' +
+        '<button class="btn" type="button" data-radar-action="toggle" data-id="' + id + '">' + (account.enabled === false ? '启用' : '停用') + '</button>' +
+        '<button class="btn" type="button" data-radar-action="open" data-url="' + url + '">打开</button>' +
+        '<button class="btn" type="button" data-radar-action="remove" data-id="' + id + '">删除</button>' +
+        '</div>' +
+        '</div>';
+    }).join('') : '<div class="radar-empty">还没有保存账号。填入账号后点“保存账号”或“立即抓取全部”。</div>';
+    const headers = (embeddedInfoState && Array.isArray(embeddedInfoState.headers) && embeddedInfoState.headers.length) ? embeddedInfoState.headers : [
+      'Rank / 排名', 'Drama ID / 短剧ID', 'English Title / 英文剧名', 'Chinese Title / 中文剧名', 'Episodes / 集数',
+      'Views / 观看数', 'Duration Seconds / 总时长(秒)', 'Duration Minutes / 总时长(分钟)', 'Limited Free / 是否限免',
+      'English Themes / 英文题材', 'Chinese Themes / 中文题材', 'English Description / 英文简介', 'Chinese Description / 中文简介'
+    ];
+    const tableHtml = rows.length ? '<div class="radar-table-wrap"><table class="radar-table"><thead><tr>' +
+      headers.map(h => '<th>' + escapeAttr(h) + '</th>').join('') +
+      '</tr></thead><tbody>' +
+      rows.map(row => {
+        const cells = [
+          ['num', row.rank],
+          ['', row.dramaId],
+          ['', row.englishTitle],
+          ['', row.chineseTitle],
+          ['num', row.episodes],
+          ['num', radarFormatNumber(row.views)],
+          ['num', row.durationSeconds],
+          ['num', row.durationMinutes],
+          ['', row.limitedFree],
+          ['', row.englishThemes],
+          ['', row.chineseThemes],
+          ['', row.englishDescription],
+          ['', row.chineseDescription],
+        ];
+        return '<tr>' + cells.map(cell => '<td' + (cell[0] ? ' class="' + cell[0] + '"' : '') + '>' + escapeAttr(cell[1]) + '</td>').join('') + '</tr>';
+      }).join('') +
+      '</tbody></table></div>' : '<div class="radar-empty">抓取后会按 shortdramatime bilingual 表格字段显示每个作品单独数据。</div>';
+    resultEl.innerHTML = accountHtml + tableHtml;
+  }
+
+  async function loadDramaRadarState() {
+    if (!api || !api.getInfoScraperState) {
+      const resultEl = $('radarResult');
+      if (resultEl) resultEl.innerHTML = '<div class="radar-empty">当前安装包缺少信息抓取接口，请重新打包。</div>';
+      return;
+    }
+    try {
+      const res = await api.getInfoScraperState();
+      if (res && res.ok) embeddedInfoState = res;
+      if (api.getInfoScraperLoginStatus) {
+        const login = await api.getInfoScraperLoginStatus();
+        if (login && login.ok) embeddedInfoLoginStatus = login;
+      }
+      renderDramaRadar();
+    } catch (err) {
+      const resultEl = $('radarResult');
+      if (resultEl) resultEl.innerHTML = '<div class="radar-empty">' + escapeAttr(err && err.message ? err.message : String(err)) + '</div>';
+    }
+  }
+
+  async function saveDramaRadarSettings() {
+    const limitEl = $('radarLimitInput');
+    const maxVideos = Math.max(1, Math.min(100, Number(limitEl && limitEl.value) || 50));
+    localStorage.setItem(DRAMA_RADAR_LIMIT_KEY, String(maxVideos));
+    if (!api || !api.saveInfoScraperSettings) throw new Error('当前安装包缺少信息抓取配置接口');
+    const res = await api.saveInfoScraperSettings({ maxVideos });
+    if (!res || !res.ok) throw new Error((res && res.error) || '保存信息抓取配置失败');
+    embeddedInfoState = res;
+    renderDramaRadar();
+    return res;
+  }
+
+  async function saveDramaRadarAccounts(clearInput) {
+    const accountEl = $('radarAccountInput');
+    await saveDramaRadarSettings();
+    const text = (accountEl && accountEl.value) || '';
+    const urls = radarAccountsFromText(text);
+    if (!urls.length) {
+      setStatus('没有新的账号链接需要保存');
+      return embeddedInfoState;
+    }
+    if (!api || !api.addInfoScraperAccounts) throw new Error('当前安装包缺少保存账号接口');
+    const res = await api.addInfoScraperAccounts({ text: urls.join('\n') });
+    if (!res || !res.ok) throw new Error((res && res.error) || '保存账号失败');
+    embeddedInfoState = res;
+    localStorage.setItem(DRAMA_RADAR_ACCOUNTS_KEY, urls.join('\n'));
+    if (clearInput && accountEl) accountEl.value = '';
+    renderDramaRadar();
+    return res;
+  }
+
+  async function refreshDramaRadar(accountIds) {
+    if (embeddedInfoBusy) return;
+    const statusEl = $('radarStatus');
+    radarSetBusy(true);
+    try {
+      await saveDramaRadarAccounts(true);
+      const maxVideos = Math.max(1, Math.min(100, Number(($('radarLimitInput') || {}).value) || 50));
+      if (statusEl) {
+        statusEl.textContent = accountIds && accountIds.length ? '正在抓取选中账号...' : '正在抓取全部保存账号...';
+        statusEl.className = 'tikhub-status';
+      }
+      if (!api || !api.refreshInfoScraper) throw new Error('当前安装包缺少立即抓取接口');
+      const res = await api.refreshInfoScraper({ reason: 'video-sniffer-embedded', accountIds: accountIds || null, maxVideos });
+      if (!res || !res.ok) throw new Error((res && res.error) || '信息抓取失败');
+      embeddedInfoState = res;
+      renderDramaRadar();
+      if (statusEl) {
+        const accounts = radarAccountsFromState();
+        const videos = embeddedInfoState && embeddedInfoState.videos ? embeddedInfoState.videos.length : 0;
+        statusEl.textContent = '已抓取 ' + accounts.length + ' 个账号，' + videos + ' 条作品';
+        statusEl.className = 'tikhub-status ok';
+      }
+      setStatus('信息抓取完成');
+      logTask('信息抓取完成：作品 ' + ((embeddedInfoState && embeddedInfoState.videos && embeddedInfoState.videos.length) || 0) + ' 条');
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      if (statusEl) {
+        statusEl.textContent = msg;
+        statusEl.className = 'tikhub-status error';
+      }
+      setStatus('信息抓取失败：' + msg, 'error');
+    } finally {
+      radarSetBusy(false);
+    }
+  }
+
+  function setupDramaRadar() {
+    const accountEl = $('radarAccountInput');
+    const limitEl = $('radarLimitInput');
+    const refreshBtn = $('radarRefreshBtn');
+    const saveBtn = $('radarSaveBtn');
+    const clearBtn = $('radarClearBtn');
+    const loginBtn = $('radarLoginBtn');
+    const checkLoginBtn = $('radarCheckLoginBtn');
+    const exportBtn = $('radarExportBtn');
+    const resultEl = $('radarResult');
+    if (!accountEl || !refreshBtn) return;
+    accountEl.value = localStorage.getItem(DRAMA_RADAR_ACCOUNTS_KEY) || '';
+    if (limitEl) limitEl.value = localStorage.getItem(DRAMA_RADAR_LIMIT_KEY) || '50';
+    refreshBtn.addEventListener('click', () => refreshDramaRadar());
+    if (saveBtn) saveBtn.addEventListener('click', async () => {
+      try {
+        await saveDramaRadarAccounts(false);
+        setStatus('账号已保存');
+      } catch (err) {
+        setStatus('保存账号失败：' + (err && err.message ? err.message : String(err)), 'error');
+      }
+    });
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+      accountEl.value = '';
+      localStorage.removeItem(DRAMA_RADAR_ACCOUNTS_KEY);
+      setStatus('已清空信息抓取输入框');
+    });
+    if (loginBtn) loginBtn.addEventListener('click', async () => {
+      try {
+        const res = await api.openInfoScraperLoginBrowser('https://www.tiktok.com/login');
+        if (res && res.status) embeddedInfoLoginStatus = res.status;
+        renderDramaRadar();
+        setStatus('已打开 TikTok 登录窗口');
+      } catch (err) {
+        setStatus('打开 TikTok 登录窗口失败：' + (err && err.message ? err.message : String(err)), 'error');
+      }
+    });
+    if (checkLoginBtn) checkLoginBtn.addEventListener('click', async () => {
+      try {
+        const res = await api.getInfoScraperLoginStatus();
+        if (res && res.ok) embeddedInfoLoginStatus = res;
+        renderDramaRadar();
+        setStatus((res && res.message) || '登录态已检测');
+      } catch (err) {
+        setStatus('检测登录失败：' + (err && err.message ? err.message : String(err)), 'error');
+      }
+    });
+    if (exportBtn) exportBtn.addEventListener('click', async () => {
+      try {
+        const res = await api.exportInfoScraperBilingualList();
+        if (!res || !res.ok) throw new Error((res && res.error) || '导出失败');
+        setStatus('已导出对标表格：' + (res.path || ''));
+      } catch (err) {
+        setStatus('导出对标表格失败：' + (err && err.message ? err.message : String(err)), 'error');
+      }
+    });
+    if (resultEl) resultEl.addEventListener('click', async event => {
+      const target = event.target.closest('[data-radar-action]');
+      if (!target) return;
+      const action = target.getAttribute('data-radar-action');
+      const id = target.getAttribute('data-id');
+      const url = target.getAttribute('data-url');
+      try {
+        if (action === 'open' && url && api.openUrl) {
+          await api.openUrl(url);
+        } else if (action === 'refresh' && id) {
+          await refreshDramaRadar([id]);
+        } else if (action === 'toggle' && id && api.toggleInfoScraperAccount) {
+          const res = await api.toggleInfoScraperAccount({ accountId: id });
+          if (res && res.ok) embeddedInfoState = res;
+          renderDramaRadar();
+        } else if (action === 'remove' && id && api.removeInfoScraperAccount) {
+          const res = await api.removeInfoScraperAccount(id);
+          if (res && res.ok) embeddedInfoState = res;
+          renderDramaRadar();
+        }
+      } catch (err) {
+        setStatus('信息抓取操作失败：' + (err && err.message ? err.message : String(err)), 'error');
+      }
+    });
+    if (api && api.onInfoScraperEvent) {
+      api.onInfoScraperEvent(event => {
+        loadDramaRadarState().catch(() => {});
+        if (event && event.message) logTask('信息抓取：' + event.message);
+      });
+    }
+    loadDramaRadarState();
+  }
+
   new ResizeObserver(syncBounds).observe($('browserSlot'));
   window.addEventListener('resize', syncBounds);
   document.addEventListener('DOMContentLoaded', syncBounds);
@@ -4440,9 +5159,23 @@
   restoreDownloadDir();
   setAnalysisDir(analysisDir);
   setupBackButton();
+  const openInfoScraperBtn = $('openInfoScraperBtn');
+  if (openInfoScraperBtn) openInfoScraperBtn.addEventListener('click', async () => {
+    try {
+      if (!api || !api.openInfoScraper) throw new Error('当前安装包缺少信息抓取页面接口');
+      await api.openInfoScraper();
+      setStatus('已打开信息抓取页面');
+    } catch (err) {
+      setStatus('打开信息抓取失败：' + (err && err.message ? err.message : String(err)), 'error');
+    }
+  });
+
+  setupTikhubConfig();
+  // 信息抓取已改为独立页面，旧内嵌面板不再初始化。
   setupEvolinkConfig();
   initAnalysisEnabledMode();
   initAutoAnalyzeMode();
+  initVideoSplitUi();
   updateAnalysisUi(false);
   updateRetryUi();
   renderSkipNotices();

@@ -1097,6 +1097,7 @@
     <div class="spacer" style="flex:1"></div>
     <button id="historyBtn" class="btn-ghost" title="查看之前的对话历史(自动保存在本地浏览器)">历 史</button>
     <button id="videoSnifferBtn" class="btn-ghost" title="打开内置浏览器,嗅探当前网页里的视频/音频资源">视频抓取</button>
+    <button id="infoScraperBtn" class="btn-ghost" title="打开独立的信息抓取窗口，保存账号并每天自动轮询热度">信息抓取</button>
     <button id="newSessionBtn" class="btn-ghost" title="清空原文与译文,开始全新的一篇(当前对话会被清掉)">新 会 话</button>
     <button id="stopBtn" class="btn-stop">中 止</button>
     <button id="goBtn" class="btn-go">开 始 改 文</button>
@@ -1825,6 +1826,13 @@ const KB_KEY_ALIASES = {
   'state_tracking': 'state-tracking',
   'compliance=checklist': 'compliance-checklist',
   'compliance_checklist': 'compliance-checklist',
+  // 英文真实台词库（海外剧英文对白校准用，见 kb-data.js 末尾 window.KB['dialogue-bank-en']）
+  'dialogue_bank_en': 'dialogue-bank-en',
+  'dialogue=bank=en': 'dialogue-bank-en',
+  'dialogue.bank.en': 'dialogue-bank-en',
+  'dialogue-bank': 'dialogue-bank-en',
+  'dialoguebank': 'dialogue-bank-en',
+  'dialogue-bank-english': 'dialogue-bank-en',
 };
 
 function normalizeKbKey(key) {
@@ -2393,6 +2401,7 @@ function expandSlashCommandForRouter(reply) {
       extra ? `用户对本集的额外要求:${extra}` : '',
       extra ? '额外要求优先级很高,必须落实到本集正文里;如果额外要求包含字数范围,本集正文必须按该范围控制篇幅。' : '',
       `必须先加载 <load_kb>episode-detail</load_kb> 获取逐集细化规范;如需要连续性校验,可再加载 <load_kb>state-tracking</load_kb>。`,
+      '如果本剧是海外 / 出海 / 英文剧本（English、ReelShort、DramaBox 这类），本集【必须额外加载】<load_kb>dialogue-bank-en</load_kb>，并用里面的真实母语台词逐句校准英文对白的语气、用词和句式：把翻译腔、中式英语、生硬直译改成母语者真实会说的说法；如果本剧是国内中文短剧，则忽略这一条、不要加载它。',
       `输出标题必须以「# 第${n}集」或「【第${n}集」开头。`,
       outlineReminderLine(),
       '不要回复“流程已结束”“已经交付”“等待新指令”等闲聊话术;本轮必须直接产出用户指定的单集剧本正文。',
@@ -4151,6 +4160,7 @@ function bindEvents() {
   const historyImportBtn    = $('historyImportBtn');
   const historyImportInput  = $('historyImportInput');
   const videoSnifferBtn     = $('videoSnifferBtn');
+  const infoScraperBtn      = $('infoScraperBtn');
 
   if (historyBtn)        historyBtn.addEventListener('click', openHistoryModal);
   if (videoSnifferBtn)   videoSnifferBtn.addEventListener('click', async () => {
@@ -4162,6 +4172,17 @@ function bindEvents() {
       await window.gaiwenDesktop.openVideoSniffer();
     } catch (err) {
       toast('视频抓取窗口打开失败: ' + (err && err.message ? err.message : err), 'error');
+    }
+  });
+  if (infoScraperBtn) infoScraperBtn.addEventListener('click', async () => {
+    try {
+      if (!window.gaiwenDesktop || !window.gaiwenDesktop.openInfoScraper) {
+        toast('当前环境不支持信息抓取窗口', 'error');
+        return;
+      }
+      await window.gaiwenDesktop.openInfoScraper();
+    } catch (err) {
+      toast('信息抓取窗口打开失败: ' + (err && err.message ? err.message : err), 'error');
     }
   });
   if (historyOpenFolderBtn) historyOpenFolderBtn.addEventListener('click', async () => {

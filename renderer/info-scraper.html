@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>改文 · 信息抓取</title>
+<style>
+  :root { --bg:#f4efe4; --panel:#fffaf1; --line:#d8cab3; --ink:#2f241d; --muted:#8d806d; --red:#ad3434; --red2:#922a2a; --ok:#167a3a; --warn:#9a6b12; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
+  button,input,textarea { font:inherit; }
+  .topbar { height:64px; display:flex; align-items:center; gap:14px; padding:0 22px; border-bottom:1px solid var(--line); background:rgba(251,247,238,.95); }
+  .brand { display:flex; align-items:center; gap:10px; font-size:20px; font-weight:800; white-space:nowrap; }
+  .mark { width:30px; height:30px; display:grid; place-items:center; background:var(--red); color:#fff; font-weight:900; }
+  .subtitle { color:var(--muted); font-size:13px; }
+  .layout { display:grid; grid-template-columns:minmax(360px,440px) minmax(0,1fr); height:calc(100vh - 64px); min-height:0; }
+  .sidebar { border-right:1px solid var(--line); padding:18px; overflow:auto; min-height:0; }
+  .content { padding:18px; overflow:auto; min-width:0; min-height:0; }
+  .section { border:1px solid var(--line); background:rgba(255,252,245,.78); margin-bottom:14px; }
+  .section h2 { margin:0; padding:12px 14px; border-bottom:1px solid var(--line); font-size:15px; }
+  .body { padding:14px; }
+  .grid2 { display:grid; grid-template-columns:1fr 120px; gap:10px; align-items:start; }
+  textarea,input { width:100%; border:1px solid var(--line); background:var(--panel); color:var(--ink); padding:10px 12px; outline:none; min-height:40px; }
+  textarea { min-height:120px; resize:vertical; }
+  .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+  .btn { border:1px solid var(--line); background:#fbf7ee; color:var(--ink); min-height:40px; padding:8px 14px; cursor:pointer; }
+  .btn.primary { background:var(--red); border-color:var(--red); color:#fff; font-weight:700; }
+  .btn.primary:hover { background:var(--red2); }
+  .btn.compact { min-height:34px; padding:5px 10px; }
+  .btn:disabled { opacity:.55; cursor:not-allowed; }
+  .hint,.meta { color:var(--muted); font-size:12px; }
+  .hint { margin-top:8px; }
+  .status { border:1px dashed var(--line); padding:10px; margin-top:10px; color:var(--muted); background:#fffdf7; }
+  .status.ok { color:var(--ok); }
+  .status.warn { color:var(--warn); }
+  .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+  .stat { border:1px solid var(--line); background:rgba(255,252,245,.86); padding:12px; min-height:78px; }
+  .stat b { display:block; font-size:24px; line-height:1.1; }
+  .stat span { color:var(--muted); font-size:12px; }
+  .account { border:1px solid var(--line); background:var(--panel); padding:12px; margin-bottom:10px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; }
+  .account-title { font-weight:800; word-break:break-word; }
+  .mini { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .pill { border:1px solid #e5d7bf; background:#fbf7ee; padding:2px 7px; color:#6f6049; font-size:12px; }
+  .table-wrap { overflow:auto; border:1px solid var(--line); background:var(--panel); max-height:calc(100vh - 235px); }
+  .data-table { width:max-content; min-width:100%; border-collapse:collapse; font-size:12px; }
+  .data-table th,.data-table td { border:1px solid #e2d5bd; padding:7px 8px; vertical-align:top; max-width:320px; white-space:normal; word-break:break-word; }
+  .data-table th { position:sticky; top:0; background:#efe5d2; z-index:1; text-align:left; color:#5d4938; }
+  .data-table td.num { text-align:right; white-space:nowrap; }
+  .data-table a { color:var(--red); text-decoration:none; font-weight:700; }
+  .empty { border:1px dashed var(--line); color:var(--muted); padding:18px; text-align:center; }
+  .log { height:180px; overflow:auto; border:1px solid var(--line); background:var(--panel); padding:10px; font-family:Consolas,Menlo,monospace; font-size:12px; white-space:pre-wrap; }
+  .error { color:var(--red); }
+  .warn { color:var(--warn); }
+  @media (max-width: 980px) { .layout { grid-template-columns:1fr; height:auto; } .sidebar,.content { overflow:visible; } .stats { grid-template-columns:repeat(2,1fr); } }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">信</span><span>信息抓取</span></div>
+    <div class="subtitle">主引擎 yt-dlp，失败时复用内置浏览器登录态兜底；导出字段对标 shortdramatime 表格。</div>
+  </header>
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="section">
+        <h2>账号监控</h2>
+        <div class="body">
+          <div class="grid2">
+            <textarea id="accountInput" placeholder="一行一个 TikTok / 抖音账号主页或作品链接，例如：https://www.tiktok.com/@drama_account"></textarea>
+            <input id="maxVideosInput" type="number" min="1" max="300" step="1" value="50" title="每个账号最多抓多少条" />
+          </div>
+          <div class="btn-row">
+            <button class="btn primary" id="saveAccountsBtn" type="button">保存账号</button>
+            <button class="btn primary" id="refreshBtn" type="button">立即抓取全部</button>
+            <button class="btn" id="exportBilingualBtn" type="button">导出对标表格</button>
+            <button class="btn" id="loginBtn" type="button">登录 TikTok</button>
+            <button class="btn" id="checkEnvBtn" type="button">检测引擎</button>
+          </div>
+          <div class="status" id="extractorStatus">检测后显示 yt-dlp 与浏览器兜底状态。</div>
+          <div class="hint" id="loginHint">TikTok 登录状态：未检测。</div>
+          <div class="hint" id="settingsHint">保存账号后，软件打开时每天 09:00 / 21:00 自动轮询一次。</div>
+        </div>
+      </section>
+      <section class="section">
+        <h2>已保存账号</h2>
+        <div class="body" id="accountList"><div class="empty">还没有保存账号。</div></div>
+      </section>
+      <section class="section">
+        <h2>运行日志</h2>
+        <div class="body"><div class="log" id="logBox">等待任务</div></div>
+      </section>
+    </aside>
+    <section class="content">
+      <div class="stats">
+        <div class="stat"><b id="accountCount">0</b><span>保存账号</span></div>
+        <div class="stat"><b id="videoCount">0</b><span>最近抓到作品</span></div>
+        <div class="stat"><b id="newCount">0</b><span>本轮新作品</span></div>
+        <div class="stat"><b id="growthCount">0</b><span>有热度增长</span></div>
+      </div>
+      <section class="section">
+        <h2>对标表格数据</h2>
+        <div class="body" id="videoList"><div class="empty">抓取后会按 shortdramatime bilingual 表格字段显示。</div></div>
+      </section>
+    </section>
+  </main>
+<script>
+(() => {
+  const api = window.infoScraper;
+  const $ = id => document.getElementById(id);
+  let state = null;
+  let loginStatus = null;
+  let extractorStatus = null;
+  const fmtCount = value => {
+    const n = Number(value) || 0;
+    if (n >= 100000000) return (n / 100000000).toFixed(n >= 1000000000 ? 1 : 2).replace(/\.0+$/, '') + '亿';
+    if (n >= 10000) return (n / 10000).toFixed(n >= 100000 ? 0 : 1).replace(/\.0+$/, '') + '万';
+    return String(n);
+  };
+  const time = value => value ? new Date(value).toLocaleString('zh-CN', { hour12:false }) : '未刷新';
+  const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+  function logLine(text) {
+    const box = $('logBox');
+    const line = '[' + new Date().toLocaleTimeString('zh-CN', { hour12:false }) + '] ' + text;
+    box.textContent = box.textContent && box.textContent !== '等待任务' ? line + '\n' + box.textContent : line;
+  }
+  function setBusy(value) {
+    ['refreshBtn', 'saveAccountsBtn', 'exportBilingualBtn'].forEach(id => { if ($(id)) $(id).disabled = value; });
+    $('refreshBtn').textContent = value ? '抓取中...' : '立即抓取全部';
+  }
+  function renderExtractorStatus() {
+    const el = $('extractorStatus');
+    if (!extractorStatus) {
+      el.textContent = '检测后显示 yt-dlp 与浏览器兜底状态。';
+      el.className = 'status';
+      return;
+    }
+    el.textContent = extractorStatus.primary + '；浏览器兜底：' + (extractorStatus.browserFallback ? '可用' : '不可用') + '。' + (extractorStatus.strategy || '');
+    el.className = 'status ' + (extractorStatus.ytdlpAvailable ? 'ok' : 'warn');
+  }
+  function render() {
+    const accounts = (state && state.accounts) || [];
+    const videos = (state && state.videos) || [];
+    const rows = (state && state.bilingualRows) || [];
+    const newCount = accounts.reduce((sum, item) => sum + (Number(item.lastNewCount) || 0), 0);
+    const growthCount = accounts.reduce((sum, item) => sum + (Number(item.lastGrowthCount) || 0), 0);
+    $('accountCount').textContent = accounts.length;
+    $('videoCount').textContent = videos.length;
+    $('newCount').textContent = newCount;
+    $('growthCount').textContent = growthCount;
+    $('maxVideosInput').value = (state && state.maxVideos) || 50;
+    const login = loginStatus || (state && state.loginStatus) || {};
+    $('loginHint').textContent = login.loggedIn
+      ? 'TikTok 登录状态：已检测到登录，会复用这个内置浏览器会话。'
+      : (login.hasTikTokCookies ? 'TikTok 登录状态：有 TikTok Cookie，但未确认登录；如果作品不全，请点“登录 TikTok”。' : 'TikTok 登录状态：未检测到；如果账号作品显示不全，请点“登录 TikTok”。');
+    $('settingsHint').textContent = '上次轮询：' + time(state && state.lastPollAt) + '；下次预计：' + ((state && state.nextPollAt) || '-') + '。';
+    renderExtractorStatus();
+    $('accountList').innerHTML = accounts.length ? accounts.map(account => {
+      const meta = esc(account.url) + '<br>上次：' + time(account.lastPolledAt)
+        + (account.lastExtractor ? ' · 来源：' + esc(account.lastExtractor) : '')
+        + (account.lastError ? ' · <span class="error">' + esc(account.lastError) + '</span>' : '')
+        + (account.lastPartialNote ? ' · <span class="warn">' + esc(account.lastPartialNote) + '</span>' : '');
+      return '<div class="account">'
+        + '<div>'
+        + '<div class="account-title">' + esc(account.label || account.url) + '</div>'
+        + '<div class="meta">' + meta + '</div>'
+        + '<div class="mini">'
+        + '<span class="pill">作品 ' + (account.lastVideoCount || 0) + '</span>'
+        + '<span class="pill">新 ' + (account.lastNewCount || 0) + '</span>'
+        + '<span class="pill">增长 ' + (account.lastGrowthCount || 0) + '</span>'
+        + '<span class="pill">' + (account.enabled === false ? '已停用' : '启用中') + '</span>'
+        + '</div>'
+        + '</div>'
+        + '<div class="btn-row" style="margin-top:0; justify-content:flex-end;">'
+        + '<button class="btn compact" data-action="toggle" data-id="' + esc(account.id) + '">' + (account.enabled === false ? '启用' : '停用') + '</button>'
+        + '<button class="btn compact" data-action="refresh" data-id="' + esc(account.id) + '">立即抓取</button>'
+        + '<button class="btn compact" data-action="open" data-url="' + esc(account.url) + '">打开</button>'
+        + '<button class="btn compact" data-action="remove" data-id="' + esc(account.id) + '">删除</button>'
+        + '</div>'
+        + '</div>';
+    }).join('') : '<div class="empty">还没有保存账号。</div>';
+    const headers = (state && state.headers) || [
+      'Rank / 排名','Drama ID / 短剧ID','English Title / 英文剧名','Chinese Title / 中文剧名','Episodes / 集数','Views / 观看数','Duration Seconds / 总时长(秒)','Duration Minutes / 总时长(分钟)','Limited Free / 是否限免','English Themes / 英文题材','Chinese Themes / 中文题材','English Description / 英文简介','Chinese Description / 中文简介'
+    ];
+    const rowCells = row => [
+      ['num', row.rank], ['', row.dramaId], ['', row.englishTitle], ['', row.chineseTitle],
+      ['num', row.episodes], ['num', fmtCount(row.views)], ['num', row.durationSeconds],
+      ['num', row.durationMinutes], ['', row.limitedFree], ['', row.englishThemes],
+      ['', row.chineseThemes], ['', row.englishDescription], ['', row.chineseDescription],
+    ];
+    $('videoList').innerHTML = rows.length ? '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+      headers.map(h => '<th>' + esc(h) + '</th>').join('') +
+      '</tr></thead><tbody>' +
+      rows.map(row => '<tr>' + rowCells(row).map((cell, idx) => {
+        const cls = cell[0] ? ' class="' + cell[0] + '"' : '';
+        const value = idx === 1 && row.videoUrl
+          ? '<a href="#" data-action="open" data-url="' + esc(row.videoUrl) + '">' + esc(cell[1] || '打开') + '</a>'
+          : esc(cell[1]);
+        return '<td' + cls + '>' + value + '</td>';
+      }).join('') + '</tr>').join('') +
+      '</tbody></table></div>' : '<div class="empty">抓取后会按 shortdramatime bilingual 表格字段显示。</div>';
+    const events = (state && state.events) || [];
+    $('logBox').textContent = events.length ? events.map(item => '[' + time(item.time) + '] ' + (item.message || item.type || '')).join('\n') : '等待任务';
+  }
+  async function load() {
+    const res = await api.getState();
+    if (res && res.ok) state = res;
+    try {
+      if (api.getLoginStatus) {
+        const status = await api.getLoginStatus();
+        if (status && status.ok) loginStatus = status;
+      }
+    } catch {}
+    try {
+      if (api.getExtractorStatus) {
+        const status = await api.getExtractorStatus();
+        if (status && status.ok) extractorStatus = status;
+      }
+    } catch {}
+    if (state) render();
+  }
+  async function saveSettings() {
+    const res = await api.saveSettings({ maxVideos: $('maxVideosInput').value });
+    if (!res || !res.ok) throw new Error((res && res.error) || '保存配置失败');
+    state = res;
+    render();
+  }
+  async function saveAccounts() {
+    await saveSettings();
+    const text = $('accountInput').value.trim();
+    if (!text) return;
+    const res = await api.addAccounts({ text, maxVideos: $('maxVideosInput').value });
+    if (!res || !res.ok) throw new Error((res && res.error) || '保存账号失败');
+    state = res;
+    $('accountInput').value = '';
+    render();
+    logLine('保存账号完成');
+  }
+  $('saveAccountsBtn').addEventListener('click', async () => {
+    try { setBusy(true); await saveAccounts(); }
+    catch (err) { logLine('保存失败：' + (err.message || err)); }
+    finally { setBusy(false); }
+  });
+  $('refreshBtn').addEventListener('click', async () => {
+    try {
+      setBusy(true);
+      await saveAccounts().catch(() => saveSettings());
+      logLine('开始抓取全部账号');
+      const res = await api.refresh({ reason: 'manual-page', maxVideos: $('maxVideosInput').value });
+      if (!res || !res.ok) throw new Error((res && res.error) || '信息抓取失败');
+      state = res;
+      render();
+      logLine('抓取完成');
+    } catch (err) {
+      logLine('抓取失败：' + (err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  });
+  $('exportBilingualBtn').addEventListener('click', async () => {
+    try {
+      const res = await api.exportBilingualList();
+      if (!res || !res.ok) throw new Error((res && res.error) || '导出失败');
+      logLine('已导出：' + res.path);
+    } catch (err) { logLine('导出失败：' + (err.message || err)); }
+  });
+  $('loginBtn').addEventListener('click', async () => {
+    try {
+      logLine('打开 TikTok 登录窗口，请在弹窗里手动登录');
+      const res = await api.openLoginBrowser('https://www.tiktok.com/login');
+      if (res && res.status) loginStatus = res.status;
+      render();
+    } catch (err) { logLine('打开登录失败：' + (err.message || err)); }
+  });
+  $('checkEnvBtn').addEventListener('click', async () => {
+    try {
+      extractorStatus = await api.getExtractorStatus();
+      if (api.getLoginStatus) loginStatus = await api.getLoginStatus();
+      render();
+      logLine('引擎检测完成');
+    } catch (err) { logLine('检测失败：' + (err.message || err)); }
+  });
+  document.body.addEventListener('click', async event => {
+    const btn = event.target.closest('[data-action]');
+    if (!btn) return;
+    event.preventDefault();
+    const action = btn.dataset.action;
+    try {
+      if (action === 'open') {
+        await api.openUrl(btn.dataset.url || '');
+      } else if (action === 'remove') {
+        const res = await api.removeAccount(btn.dataset.id);
+        if (!res || !res.ok) throw new Error((res && res.error) || '删除失败');
+        state = res; render();
+      } else if (action === 'toggle') {
+        const res = await api.toggleAccount({ accountId: btn.dataset.id });
+        if (!res || !res.ok) throw new Error((res && res.error) || '切换失败');
+        state = res; render();
+      } else if (action === 'refresh') {
+        setBusy(true);
+        const res = await api.refresh({ reason: 'single-account', accountIds: [btn.dataset.id], maxVideos: $('maxVideosInput').value });
+        if (!res || !res.ok) throw new Error((res && res.error) || '抓取失败');
+        state = res; render();
+      }
+    } catch (err) {
+      logLine('操作失败：' + (err.message || err));
+    } finally {
+      if (action === 'refresh') setBusy(false);
+    }
+  });
+  if (api && api.onEvent) {
+    api.onEvent(event => {
+      if (event && event.message) logLine(event.message);
+      load().catch(() => {});
+    });
+  }
+  load().catch(err => logLine('加载失败：' + (err.message || err)));
+})();
+</script>
+</body>
+</html>

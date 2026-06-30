@@ -36,10 +36,25 @@ try {
 let mainWindow = null;
 let videoSnifferWindow = null;
 let videoSnifferView = null;
+let infoScraperWindow = null;
+let infoScraperHiddenWindow = null;
+let infoScraperHiddenView = null;
+let infoScraperLoginWindow = null;
+let infoScraperLoginStatusCache = {
+  ok: true,
+  loggedIn: false,
+  hasTikTokCookies: false,
+  cookieCount: 0,
+  checkedAt: '',
+  message: '未检测 TikTok 登录态',
+};
+let infoScraperPollTimer = null;
+let infoScraperPolling = false;
 let updateReady = false;
 
 const VIDEO_SNIFFER_PARTITION = 'persist:gaiwen-video-sniffer';
 const VIDEO_ANALYSIS_MODEL_ID = 73;
+const INFO_SCRAPER_POLL_HOURS = [9, 21];
 const LOCAL_VIDEO_EXTS = new Set(['.mp4', '.m4v', '.mov', '.webm', '.mkv']);
 const MEDIA_EXTS = new Set([
   'mp4', 'm4v', 'm3u8', 'm3u', 'mpd', 'm4s', 'ts', 'webm', 'flv', 'mov',
@@ -542,6 +557,110 @@ function probeMediaDuration(filePath) {
   });
 }
 
+function uniqueDirPath(parentDir, dirName) {
+  let target = path.join(parentDir, dirName);
+  if (!fs.existsSync(target)) return target;
+  for (let i = 2; i < 1000; i++) {
+    target = path.join(parentDir, dirName + '-' + i);
+    if (!fs.existsSync(target)) return target;
+  }
+  return path.join(parentDir, dirName + '-' + Date.now());
+}
+
+function removeDirIfEmpty(dir) {
+  try {
+    if (dir && fs.existsSync(dir) && fs.statSync(dir).isDirectory() && fs.readdirSync(dir).length === 0) {
+      fs.rmdirSync(dir);
+    }
+  } catch {}
+}
+
+async function splitLocalVideoFile(payload) {
+  const sourcePath = String((payload && payload.filePath) || '');
+  if (!sourcePath || !fs.existsSync(sourcePath)) return { ok: false, error: '视频文件不存在' };
+  const stat = fs.statSync(sourcePath);
+  if (!stat.isFile()) return { ok: false, error: '请选择一个视频文件' };
+  const ext = path.extname(sourcePath).toLowerCase();
+  if (!LOCAL_VIDEO_EXTS.has(ext)) return { ok: false, error: '不支持的视频格式：' + ext };
+
+  const rawSeconds = Number((payload && payload.segmentSeconds) || 0);
+  const segmentSeconds = Math.max(30, Math.min(12 * 3600, Math.round(rawSeconds || 0)));
+  if (!segmentSeconds) return { ok: false, error: '切分时长无效' };
+
+  const parentDir = String((payload && payload.outputDir) || path.dirname(sourcePath));
+  const baseName = safeFileName(path.basename(sourcePath, ext), '视频');
+  const outputDir = uniqueDirPath(parentDir, baseName + '-切分');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const outputExt = ext || '.mp4';
+  const pattern = path.join(outputDir, baseName + '-part-%03d' + outputExt);
+  const args = [
+    '-hide_banner',
+    '-y',
+    '-i', sourcePath,
+    '-map', '0',
+    '-c', 'copy',
+    '-avoid_negative_ts', 'make_zero',
+    '-f', 'segment',
+    '-segment_time', String(segmentSeconds),
+    '-reset_timestamps', '1',
+    pattern,
+  ];
+
+  return new Promise((resolve) => {
+    let tail = '';
+    let child;
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    try {
+      child = spawn(ffmpegExecutable(), args, { windowsHide: true });
+    } catch (err) {
+      removeDirIfEmpty(outputDir);
+      done({ ok: false, error: err && err.message ? err.message : String(err) });
+      return;
+    }
+    child.stderr.on('data', chunk => {
+      tail = (tail + chunk.toString('utf8')).slice(-6000);
+    });
+    child.on('error', err => {
+      const missing = err && err.code === 'ENOENT';
+      removeDirIfEmpty(outputDir);
+      done({
+        ok: false,
+        error: missing ? '找不到 ffmpeg，无法切分视频' : (err && err.message ? err.message : String(err)),
+      });
+    });
+    child.on('close', code => {
+      if (code !== 0) {
+        removeDirIfEmpty(outputDir);
+        done({ ok: false, outputDir, error: 'ffmpeg 切分失败，退出码 ' + code + (tail ? '\n' + tail.slice(-1600) : '') });
+        return;
+      }
+      const files = fs.readdirSync(outputDir)
+        .filter(name => path.extname(name).toLowerCase() === outputExt)
+        .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+        .map(name => path.join(outputDir, name));
+      if (!files.length) {
+        removeDirIfEmpty(outputDir);
+        done({ ok: false, outputDir, error: '切分完成但没有生成片段文件' });
+        return;
+      }
+      done({
+        ok: true,
+        inputPath: sourcePath,
+        outputDir,
+        files,
+        count: files.length,
+        segmentSeconds,
+      });
+    });
+  });
+}
+
 function sendMergeEvent(targetWebContents, payload) {
   if (targetWebContents && !targetWebContents.isDestroyed()) {
     targetWebContents.send('video-sniffer:merge', payload);
@@ -760,6 +879,186 @@ function createVideoSnifferView() {
   });
 }
 
+
+function getInfoScraperSession() {
+  setupVideoSnifferSession();
+  return session.fromPartition(VIDEO_SNIFFER_PARTITION);
+}
+
+async function getInfoScraperLoginStatus() {
+  try {
+    const ses = getInfoScraperSession();
+    const cookies = await ses.cookies.get({}).catch(() => []);
+    const tiktokCookies = cookies.filter(cookie => /(^|\.)tiktok\.com$/i.test(String(cookie.domain || '').replace(/^\./, '')) || /tiktok\.com/i.test(String(cookie.domain || '')));
+    const loginCookieNames = new Set([
+      'sessionid',
+      'sessionid_ss',
+      'sid_guard',
+      'sid_tt',
+      'uid_tt',
+      'uid_tt_ss',
+      'sid_ucp_v1',
+      'ssid_ucp_v1',
+    ]);
+    const loggedIn = tiktokCookies.some(cookie => loginCookieNames.has(String(cookie.name || '').toLowerCase()));
+    const hasTikTokCookies = tiktokCookies.length > 0;
+    const checkedAt = new Date().toISOString();
+    return {
+      ok: true,
+      loggedIn,
+      hasTikTokCookies,
+      cookieCount: tiktokCookies.length,
+      checkedAt,
+      message: loggedIn
+        ? '已检测到 TikTok 登录态，信息抓取会复用这个账号会话。'
+        : hasTikTokCookies
+          ? '已检测到 TikTok 会话 Cookie，但未确认登录；如作品不全，请点“登录 TikTok”手动登录。'
+          : '未检测到 TikTok 登录态；如账号作品显示不全，请点“登录 TikTok”手动登录。',
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      loggedIn: false,
+      hasTikTokCookies: false,
+      cookieCount: 0,
+      checkedAt: new Date().toISOString(),
+      message: err && err.message ? err.message : String(err),
+    };
+  }
+}
+
+async function refreshInfoScraperLoginStatusCache(options = {}) {
+  infoScraperLoginStatusCache = await getInfoScraperLoginStatus();
+  if (options.notify) {
+    sendInfoScraperEvent({
+      type: infoScraperLoginStatusCache.loggedIn ? 'login' : 'login-warning',
+      message: infoScraperLoginStatusCache.message,
+    });
+  }
+  return infoScraperLoginStatusCache;
+}
+
+function createInfoScraperLoginWindow(rawUrl) {
+  const targetUrl = normalizeNavigationUrl(rawUrl || 'https://www.tiktok.com/login');
+  setupVideoSnifferSession();
+  if (infoScraperLoginWindow && !infoScraperLoginWindow.isDestroyed()) {
+    infoScraperLoginWindow.focus();
+    if (targetUrl) infoScraperLoginWindow.webContents.loadURL(targetUrl).catch(() => {});
+    return infoScraperLoginWindow;
+  }
+
+  infoScraperLoginWindow = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 980,
+    minHeight: 680,
+    title: '改文 · TikTok 登录',
+    autoHideMenuBar: true,
+    backgroundColor: '#f4efe4',
+    webPreferences: {
+      partition: VIDEO_SNIFFER_PARTITION,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  try { infoScraperLoginWindow.setMenuBarVisibility(false); } catch {}
+  try {
+    infoScraperLoginWindow.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
+  } catch {}
+  infoScraperLoginWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url && /^https?:\/\//i.test(url)) infoScraperLoginWindow.webContents.loadURL(url).catch(() => {});
+    return { action: 'deny' };
+  });
+  const updateStatusQuietly = () => {
+    refreshInfoScraperLoginStatusCache().catch(() => {});
+  };
+  infoScraperLoginWindow.webContents.on('did-finish-load', updateStatusQuietly);
+  infoScraperLoginWindow.webContents.on('did-navigate', updateStatusQuietly);
+  infoScraperLoginWindow.webContents.on('did-navigate-in-page', updateStatusQuietly);
+  infoScraperLoginWindow.on('closed', () => {
+    infoScraperLoginWindow = null;
+    refreshInfoScraperLoginStatusCache({ notify: true }).catch(() => {});
+  });
+  infoScraperLoginWindow.loadURL(targetUrl).catch(() => {});
+  return infoScraperLoginWindow;
+}
+
+function createInfoScraperHiddenBrowser() {
+  setupVideoSnifferSession();
+  if (infoScraperHiddenWindow && !infoScraperHiddenWindow.isDestroyed()) {
+    return infoScraperHiddenWindow.webContents;
+  }
+
+  // Some video grids only finish lazy-loading in a real Chromium window.
+  // Keep this window off-screen and almost transparent, but focusable so PageDown
+  // and wheel events can drive TikTok/Douyin lazy lists without opening 视频抓取.
+  infoScraperHiddenWindow = new BrowserWindow({
+    width: 1365,
+    height: 1000,
+    x: -12000,
+    y: -12000,
+    show: true,
+    skipTaskbar: true,
+    focusable: true,
+    opacity: 0.02,
+    paintWhenInitiallyHidden: true,
+    title: '改文 · 信息抓取后台浏览器',
+    webPreferences: {
+      partition: VIDEO_SNIFFER_PARTITION,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  infoScraperHiddenView = null;
+  try { infoScraperHiddenWindow.setMenuBarVisibility(false); } catch {}
+  try {
+    infoScraperHiddenWindow.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
+  } catch {}
+  infoScraperHiddenWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url && /^https?:\/\//i.test(url)) infoScraperHiddenWindow.webContents.loadURL(url);
+    return { action: 'deny' };
+  });
+  infoScraperHiddenWindow.on('closed', () => {
+    infoScraperHiddenWindow = null;
+    infoScraperHiddenView = null;
+  });
+  return infoScraperHiddenWindow.webContents;
+}
+
+function getInfoScraperBrowserWebContents() {
+  if (videoSnifferView && !videoSnifferView.webContents.isDestroyed()) return videoSnifferView.webContents;
+  return createInfoScraperHiddenBrowser();
+}
+
+function createInfoScraperWindow() {
+  if (infoScraperWindow && !infoScraperWindow.isDestroyed()) {
+    infoScraperWindow.focus();
+    return;
+  }
+
+  infoScraperWindow = new BrowserWindow({
+    width: 1180,
+    height: 760,
+    minWidth: 960,
+    minHeight: 620,
+    title: '改文 · 信息抓取',
+    autoHideMenuBar: true,
+    backgroundColor: '#f4efe4',
+    webPreferences: {
+      preload: path.join(__dirname, 'renderer', 'preload-info-scraper.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  infoScraperWindow.loadFile(path.join(__dirname, 'renderer', 'info-scraper.html'));
+  infoScraperWindow.on('closed', () => { infoScraperWindow = null; });
+}
+
 function createVideoSnifferWindow() {
   setupVideoSnifferSession();
 
@@ -874,6 +1173,1734 @@ function fetchPageHtml(targetUrl) {
     request.end();
   });
 }
+
+const TIKHUB_BASE_URL = 'https://api.tikhub.io';
+const TIKHUB_ENDPOINTS = {
+  tiktok: {
+    video: [
+      '/api/v1/tiktok/web/fetch_one_video_v2',
+      '/api/v1/tiktok/web/fetch_one_video',
+    ],
+    user: [
+      '/api/v1/tiktok/web/get_sec_user_id',
+      '/api/v1/tiktok/web/fetch_user_post',
+      '/api/v1/tiktok/web/fetch_user_posts',
+      '/api/v1/tiktok/web/fetch_user_videos',
+      '/api/v1/tiktok/web/fetch_user_info',
+      '/api/v1/tiktok/web/fetch_user_profile_v2',
+      '/api/v1/tiktok/app/v3/get_user_id_and_sec_user_id_by_username',
+      '/api/v1/tiktok/app/v3/fetch_user_post_videos_v3',
+      '/api/v1/tiktok/app/v3/fetch_user_post_videos_v2',
+      '/api/v1/tiktok/app/v3/fetch_user_post_videos',
+      '/api/v1/tiktok/app/v3/handler_user_profile',
+      '/api/v1/tiktok/web/fetch_user_profile',
+    ],
+  },
+  douyin: {
+    video: [
+      '/api/v1/douyin/web/fetch_one_video',
+      '/api/v1/douyin/app/v3/fetch_one_video',
+    ],
+    user: [
+      '/api/v1/douyin/web/fetch_user_profile',
+      '/api/v1/douyin/web/fetch_user_info',
+      '/api/v1/douyin/web/fetch_user_post',
+      '/api/v1/douyin/web/fetch_user_videos',
+    ],
+  },
+};
+
+function detectTikhubPlatform(shareUrl) {
+  try {
+    const host = new URL(String(shareUrl || '')).hostname.toLowerCase();
+    if (/(^|\.)douyin\.com$|(^|\.)iesdouyin\.com$|(^|\.)snssdk\.com$/i.test(host)) return 'douyin';
+    if (/(^|\.)tiktok\.com$|(^|\.)vm\.tiktok\.com$|(^|\.)vt\.tiktok\.com$/i.test(host)) return 'tiktok';
+  } catch {}
+  return 'tiktok';
+}
+
+function detectTikhubResourceType(shareUrl) {
+  try {
+    const url = new URL(String(shareUrl || ''));
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname.replace(/\/+$/g, '');
+    if (/(^|\.)tiktok\.com$/i.test(host)) {
+      if (/^\/@[^/]+\/(video|photo)\//i.test(path) || /^\/t\//i.test(path)) return 'video';
+      if (/^\/@[^/]+$/i.test(path)) return 'user';
+    }
+    if (/(^|\.)douyin\.com$|(^|\.)iesdouyin\.com$/i.test(host)) {
+      if (/\/(video|note)\//i.test(path) || /\/share\/video\//i.test(path)) return 'video';
+      if (/\/user\//i.test(path) || /\/share\/user\//i.test(path)) return 'user';
+    }
+  } catch {}
+  return 'video';
+}
+
+function extractTikhubUsername(shareUrl) {
+  try {
+    const url = new URL(String(shareUrl || ''));
+    const match = url.pathname.match(/^\/@([^/]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch {}
+  return '';
+}
+
+function findTikhubValueDeep(obj, keys, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 8) return '';
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] != null && obj[key] !== '') {
+      return obj[key];
+    }
+  }
+  const values = Array.isArray(obj) ? obj : Object.values(obj);
+  for (const value of values) {
+    const found = findTikhubValueDeep(value, keys, depth + 1);
+    if (found !== '') return found;
+  }
+  return '';
+}
+
+function tikhubResponseMessage(data, text) {
+  const direct = findTikhubValueDeep(data, ['message', 'msg', 'detail', 'error', 'status_msg', 'statusMsg']);
+  if (direct !== '') return String(direct).slice(0, 500);
+  if (typeof text === 'string' && text.trim()) return text.trim().slice(0, 500);
+  return '';
+}
+
+function tikhubEndpointList(payload) {
+  const endpoint = String((payload && payload.endpoint) || '').trim();
+  if (endpoint) return [endpoint.startsWith('/') ? endpoint : '/' + endpoint];
+  const platform = String((payload && payload.platform) || 'auto').toLowerCase();
+  const detectedPlatform = platform === 'douyin' || platform === 'tiktok'
+    ? platform
+    : detectTikhubPlatform(payload && payload.shareUrl);
+  const typeFromPayload = String((payload && payload.resourceType) || 'auto').toLowerCase();
+  const resourceType = typeFromPayload === 'user' || typeFromPayload === 'video'
+    ? typeFromPayload
+    : detectTikhubResourceType(payload && payload.shareUrl);
+  const group = TIKHUB_ENDPOINTS[detectedPlatform] || TIKHUB_ENDPOINTS.tiktok;
+  return (group[resourceType] || group.video || []).slice();
+}
+
+function buildTikhubRequestUrl(endpoint, context) {
+  const url = new URL(endpoint, TIKHUB_BASE_URL);
+  const lower = endpoint.toLowerCase();
+  const shareUrl = context.shareUrl;
+  const username = context.username;
+  const secUid = context.secUid;
+  const resourceType = context.resourceType;
+
+  if (lower.includes('/tiktok/web/get_sec_user_id')) {
+    url.searchParams.set('url', shareUrl);
+    return { url, intermediate: true };
+  }
+
+  if (lower.includes('/tiktok/web/fetch_user_post')) {
+    if (!secUid) return { skip: true, reason: 'missing secUid' };
+    url.searchParams.set('secUid', secUid);
+    url.searchParams.set('cursor', '0');
+    url.searchParams.set('count', String(Math.max(1, Math.min(100, Number(context.count) || 20))));
+    url.searchParams.set('coverFormat', '2');
+    url.searchParams.set('post_item_list_request_type', '0');
+    return { url };
+  }
+
+  if (lower.includes('/tiktok/app/v3/get_user_id_and_sec_user_id_by_username')) {
+    if (!username) return { skip: true, reason: 'missing username' };
+    url.searchParams.set('username', username);
+    return { url, intermediate: true };
+  }
+
+  if (lower.includes('/tiktok/app/v3/fetch_user_post_videos')) {
+    if (secUid) url.searchParams.set('sec_user_id', secUid);
+    if (username) url.searchParams.set('unique_id', username);
+    url.searchParams.set('max_cursor', '0');
+    url.searchParams.set('count', String(Math.max(1, Math.min(100, Number(context.count) || 20))));
+    url.searchParams.set('sort_type', '0');
+    return { url };
+  }
+
+  if (lower.includes('/tiktok/app/v3/handler_user_profile')) {
+    if (secUid) url.searchParams.set('sec_user_id', secUid);
+    if (username) url.searchParams.set('unique_id', username);
+    return { url };
+  }
+
+  if (lower.includes('/tiktok/web/fetch_user_profile')) {
+    if (username) url.searchParams.set('uniqueId', username);
+    if (secUid) url.searchParams.set('secUid', secUid);
+    return { url };
+  }
+
+  if (resourceType === 'user') {
+    url.searchParams.set('share_url', shareUrl);
+    url.searchParams.set('url', shareUrl);
+    if (username) {
+      url.searchParams.set('uniqueId', username);
+      url.searchParams.set('unique_id', username);
+      url.searchParams.set('username', username);
+    }
+    if (secUid) url.searchParams.set('secUid', secUid);
+    return { url };
+  }
+
+  url.searchParams.set('share_url', shareUrl);
+  return { url };
+}
+
+function netRequestJson(targetUrl, options = {}) {
+  return new Promise((resolve, reject) => {
+    let request;
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      try { if (request) request.abort(); } catch {}
+      finish(reject, new Error('TikHub request timeout'));
+    }, Number(options.timeoutMs) || 20000);
+    try {
+      request = net.request({
+        method: options.method || 'GET',
+        url: targetUrl,
+        redirect: 'follow',
+      });
+    } catch (err) {
+      finish(reject, err);
+      return;
+    }
+    for (const [key, value] of Object.entries(options.headers || {})) {
+      try { request.setHeader(key, value); } catch {}
+    }
+    const chunks = [];
+    request.on('response', (response) => {
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch {}
+        finish(resolve, { statusCode: Number(response.statusCode) || 0, text, data });
+      });
+      response.on('error', err => finish(reject, err));
+    });
+    request.on('error', err => finish(reject, err));
+    request.end();
+  });
+}
+
+async function fetchTikhubVideoInfo(payload) {
+  const apiKey = String((payload && payload.apiKey) || '').trim();
+  const shareUrl = normalizeNavigationUrl(payload && payload.shareUrl);
+  if (!apiKey) return { ok: false, error: 'TikHub API Key is required' };
+  if (!shareUrl || !/^https?:\/\//i.test(shareUrl)) return { ok: false, error: 'Share URL is required' };
+
+  const attempts = [];
+  const detectedPlatform = String((payload && payload.platform) || 'auto').toLowerCase() === 'auto'
+    ? detectTikhubPlatform(shareUrl)
+    : String((payload && payload.platform) || 'tiktok').toLowerCase();
+  const detectedResourceType = String((payload && payload.resourceType) || 'auto').toLowerCase() === 'auto'
+    ? detectTikhubResourceType(shareUrl)
+    : String((payload && payload.resourceType) || 'video').toLowerCase();
+  const username = extractTikhubUsername(shareUrl);
+  const requireVideos = !!(payload && payload.requireVideos);
+  let secUid = '';
+  for (const endpoint of tikhubEndpointList({ ...payload, shareUrl })) {
+    const built = buildTikhubRequestUrl(endpoint, {
+      shareUrl,
+      username,
+      secUid,
+      resourceType: detectedResourceType,
+      count: payload && payload.count,
+    });
+    if (built.skip) {
+      attempts.push({ endpoint, skipped: built.reason || 'skipped' });
+      continue;
+    }
+    try {
+      const response = await netRequestJson(built.url.toString(), {
+        headers: {
+          Accept: 'application/json',
+          Authorization: 'Bearer ' + apiKey,
+        },
+      });
+      const responseMessage = tikhubResponseMessage(response.data, response.text);
+      const attempt = { endpoint, statusCode: response.statusCode };
+      if (responseMessage) attempt.message = responseMessage;
+      attempts.push(attempt);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        const nextSecUid = findTikhubValueDeep(response.data, ['secUid', 'sec_uid', 'sec_user_id', 'sec_user_id_str']);
+        if (nextSecUid && !secUid) secUid = String(nextSecUid);
+        if (built.intermediate) {
+          if (!secUid && payload && payload.endpoint) {
+            return {
+              ok: false,
+              endpoint,
+              statusCode: response.statusCode,
+              error: 'TikHub 已返回结果，但没有解析到 secUid，无法继续拉用户作品列表',
+              data: response.data,
+              attempts,
+            };
+          }
+          continue;
+        }
+        if (requireVideos && detectedResourceType === 'user') {
+          const videoCount = collectTikhubVideoItems(response.data).length;
+          if (!videoCount) {
+            attempt.message = (attempt.message ? attempt.message + '；' : '') + '接口未返回作品列表，继续尝试作品接口';
+            continue;
+          }
+        }
+        return {
+          ok: true,
+          endpoint,
+          shareUrl,
+          platform: detectedPlatform,
+          resourceType: detectedResourceType,
+          secUid,
+          statusCode: response.statusCode,
+          data: response.data,
+          rawText: response.data ? '' : response.text,
+          attempts,
+        };
+      }
+      if (payload && payload.endpoint) {
+        return {
+          ok: false,
+          endpoint,
+          statusCode: response.statusCode,
+          error: responseMessage || ('HTTP ' + response.statusCode),
+          data: response.data,
+          attempts,
+        };
+      }
+    } catch (err) {
+      attempts.push({ endpoint, error: err && err.message ? err.message : String(err) });
+      if (payload && payload.endpoint) {
+        return { ok: false, endpoint, error: err && err.message ? err.message : String(err), attempts };
+      }
+    }
+  }
+  const realAttempts = attempts.filter(item => item && item.statusCode);
+  const allForbidden = realAttempts.length > 0 && realAttempts.every(item => item.statusCode === 403);
+  const error = detectedResourceType === 'user'
+    ? (allForbidden
+      ? 'TikHub 用户主页相关接口全部返回 403。接口路径和参数已按 TikHub OpenAPI 配置，这通常表示当前 API Key 没有 TikTok 用户/作品列表接口权限，或账号套餐/余额/RPS 限制拒绝了该接口。请查看 attempts 里的 message，或到 TikHub 后台确认 TikTok 用户接口权限。'
+      : '当前链接像是 TikTok/抖音用户主页，已改走用户主页接口，但 TikHub 没返回可用数据。可能该账号未开通对应接口，或平台接口名变更；可以在自定义 endpoint 填 TikHub 后台给的用户/作品列表接口。')
+    : 'TikHub endpoints did not return usable data';
+  return { ok: false, error, shareUrl, platform: detectedPlatform, resourceType: detectedResourceType, attempts };
+}
+
+function tikhubDirectValue(obj, keys) {
+  if (!obj || typeof obj !== 'object') return '';
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] != null && obj[key] !== '') return obj[key];
+  }
+  return '';
+}
+
+function tikhubPickValue(obj, keys) {
+  const direct = tikhubDirectValue(obj, keys);
+  if (direct !== '') return direct;
+  return findTikhubValueDeep(obj, keys);
+}
+
+function tikhubNumber(value) {
+  if (value == null || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  let text = String(value).trim().replace(/,/g, '');
+  if (!text) return 0;
+  let multiplier = 1;
+  if (/万/.test(text)) multiplier = 10000;
+  else if (/亿/.test(text)) multiplier = 100000000;
+  else if (/k$/i.test(text)) multiplier = 1000;
+  else if (/m$/i.test(text)) multiplier = 1000000;
+  else if (/b$/i.test(text)) multiplier = 1000000000;
+  text = text.replace(/[万亿kKmMbB]/g, '');
+  const num = Number(text);
+  return Number.isFinite(num) ? Math.round(num * multiplier) : 0;
+}
+
+function tikhubString(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function tikhubTimestamp(value) {
+  const n = tikhubNumber(value);
+  if (!n) return 0;
+  if (n > 100000000000) return Math.round(n / 1000);
+  return n;
+}
+
+function tikhubStableHash(text) {
+  const raw = String(text || '');
+  let hash = 0;
+  for (let i = 0; i < raw.length; i++) hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+  return Math.abs(hash).toString(36);
+}
+
+function tikhubLooksLikeVideoItem(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+  const id = tikhubDirectValue(item, ['aweme_id', 'awemeId', 'item_id', 'itemId', 'video_id', 'videoId']);
+  const title = tikhubPickValue(item, ['desc', 'description', 'title', 'text', 'caption']);
+  const play = tikhubPickValue(item, ['play_count', 'playCount', 'view_count', 'viewCount', 'views', 'play']);
+  const created = tikhubPickValue(item, ['create_time', 'createTime', 'create_at', 'created_at', 'publish_time']);
+  const stats = tikhubPickValue(item, ['digg_count', 'like_count', 'comment_count', 'share_count']);
+  return !!(id && (title || play || created || stats));
+}
+
+function collectTikhubVideoItems(root) {
+  const items = [];
+  const seenObjects = new Set();
+  const seenKeys = new Set();
+  const visit = (value, depth) => {
+    if (!value || depth > 10) return;
+    if (typeof value !== 'object') return;
+    if (seenObjects.has(value)) return;
+    seenObjects.add(value);
+    if (tikhubLooksLikeVideoItem(value)) {
+      const id = tikhubString(tikhubDirectValue(value, ['aweme_id', 'awemeId', 'item_id', 'itemId', 'video_id', 'videoId'])
+        || tikhubPickValue(value, ['aweme_id', 'awemeId', 'item_id', 'itemId', 'video_id', 'videoId']));
+      const title = tikhubString(tikhubPickValue(value, ['desc', 'description', 'title', 'text', 'caption']));
+      const key = id || (title + ':' + tikhubString(tikhubPickValue(value, ['create_time', 'createTime', 'created_at'])));
+      const stable = key || tikhubStableHash(JSON.stringify(value).slice(0, 600));
+      if (!seenKeys.has(stable)) {
+        seenKeys.add(stable);
+        items.push(value);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (tikhubLooksLikeVideoItem(item)) {
+          const id = tikhubString(tikhubDirectValue(item, ['aweme_id', 'awemeId', 'item_id', 'itemId', 'video_id', 'videoId'])
+            || tikhubPickValue(item, ['aweme_id', 'awemeId', 'item_id', 'itemId', 'video_id', 'videoId']));
+          const title = tikhubString(tikhubPickValue(item, ['desc', 'description', 'title', 'text', 'caption']));
+          const key = id || (title + ':' + tikhubString(tikhubPickValue(item, ['create_time', 'createTime', 'created_at'])));
+          const stable = key || tikhubStableHash(JSON.stringify(item).slice(0, 600));
+          if (!seenKeys.has(stable)) {
+            seenKeys.add(stable);
+            items.push(item);
+          }
+        } else {
+          visit(item, depth + 1);
+        }
+      }
+      return;
+    }
+    for (const val of Object.values(value)) visit(val, depth + 1);
+  };
+  visit(root && root.data ? root.data : root, 0);
+  return items;
+}
+
+function normalizeTikhubVideo(item, account, previousMap) {
+  const id = tikhubString(tikhubDirectValue(item, ['aweme_id', 'awemeId', 'item_id', 'itemId', 'video_id', 'videoId'])
+    || tikhubPickValue(item, ['aweme_id', 'awemeId', 'item_id', 'itemId', 'video_id', 'videoId']));
+  const title = tikhubString(tikhubPickValue(item, ['desc', 'description', 'title', 'text', 'caption'])).slice(0, 500);
+  const accountName = tikhubString(tikhubPickValue(item, ['unique_id', 'uniqueId', 'nickname', 'author_unique_id', 'authorName']))
+    || account.username
+    || account.label;
+  const playCount = tikhubNumber(tikhubPickValue(item, ['play_count', 'playCount', 'view_count', 'viewCount', 'views', 'play']));
+  const likeCount = tikhubNumber(tikhubPickValue(item, ['digg_count', 'like_count', 'likeCount', 'likes']));
+  const commentCount = tikhubNumber(tikhubPickValue(item, ['comment_count', 'commentCount', 'comments']));
+  const shareCount = tikhubNumber(tikhubPickValue(item, ['share_count', 'shareCount', 'shares']));
+  const collectCount = tikhubNumber(tikhubPickValue(item, ['collect_count', 'collectCount', 'favorite_count', 'favoriteCount']));
+  const createTime = tikhubTimestamp(tikhubPickValue(item, ['create_time', 'createTime', 'create_at', 'created_at', 'publish_time']));
+  const durationMs = tikhubNumber(tikhubPickValue(item, ['duration', 'duration_ms', 'durationMs']));
+  const directUrl = tikhubString(tikhubPickValue(item, ['share_url', 'shareUrl', 'web_url', 'webUrl', 'url']));
+  const username = account.username || accountName;
+  const videoUrl = /^https?:\/\//i.test(directUrl)
+    ? directUrl
+    : (id && username ? `https://www.tiktok.com/@${encodeURIComponent(username.replace(/^@/, ''))}/video/${id}` : account.url);
+  const key = id ? `${account.platform || 'tiktok'}:${id}` : `${account.url}:${tikhubStableHash(videoUrl + title)}`;
+  const previous = (previousMap && previousMap[key]) || {};
+  const playGrowth = Math.max(0, playCount - (Number(previous.playCount) || 0));
+  const likeGrowth = Math.max(0, likeCount - (Number(previous.likeCount) || 0));
+  const commentGrowth = Math.max(0, commentCount - (Number(previous.commentCount) || 0));
+  const shareGrowth = Math.max(0, shareCount - (Number(previous.shareCount) || 0));
+  const engagement = likeCount + commentCount * 4 + shareCount * 6 + collectCount * 2;
+  const engagementRate = playCount > 0 ? engagement / playCount : 0;
+  const ageHours = createTime ? Math.max(0, (Date.now() / 1000 - createTime) / 3600) : 9999;
+  const recencyBoost = ageHours <= 24 ? 90 : ageHours <= 72 ? 45 : ageHours <= 168 ? 20 : 0;
+  const growthScore = Math.log10(playGrowth + likeGrowth * 4 + commentGrowth * 8 + shareGrowth * 10 + 10) * 90;
+  const baseScore = Math.log10(playCount + 10) * 120 + Math.log10(engagement + 10) * 70 + Math.min(engagementRate * 12000, 180);
+  const score = Math.round(baseScore + growthScore + recencyBoost);
+  const hotLevel = score >= 980 || playGrowth >= 500000 ? '爆款候选' : score >= 760 || playGrowth >= 100000 ? '增长关注' : '观察';
+  return {
+    key,
+    id,
+    account: accountName || account.label || account.url,
+    accountUrl: account.url,
+    title,
+    videoUrl,
+    playCount,
+    likeCount,
+    commentCount,
+    shareCount,
+    collectCount,
+    playGrowth,
+    likeGrowth,
+    commentGrowth,
+    shareGrowth,
+    engagementRate,
+    createTime,
+    createTimeText: createTime ? new Date(createTime * 1000).toLocaleString('zh-CN', { hour12: false }) : '',
+    durationSec: durationMs > 1000 ? Math.round(durationMs / 1000) : durationMs,
+    score,
+    hotLevel,
+  };
+}
+
+
+
+function normalizeTikhubUsernameValue(value) {
+  return String(value || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+function getTikhubUsernameFromUrl(rawUrl) {
+  try {
+    const url = new URL(String(rawUrl || ''));
+    const match = decodeURIComponent(url.pathname || '').match(/^\/@([^/]+)/i);
+    return match ? normalizeTikhubUsernameValue(match[1]) : '';
+  } catch {
+    return '';
+  }
+}
+
+function tikhubCountFromText(text) {
+  const raw = String(text || '').replace(/,/g, ' ');
+  const matches = raw.match(/\d+(?:\.\d+)?\s*(?:K|M|B|k|m|b|万|亿)?/g) || [];
+  let best = 0;
+  for (const item of matches) {
+    const value = tikhubNumber(item);
+    if (value > best) best = value;
+  }
+  return best;
+}
+
+function waitForVideoSnifferLoad(wc, timeoutMs = 12000) {
+  return new Promise(resolve => {
+    if (!wc || wc.isDestroyed()) return resolve(false);
+    let done = false;
+    const finish = value => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      wc.removeListener('did-stop-loading', onStop);
+      wc.removeListener('did-fail-load', onFail);
+      resolve(value);
+    };
+    const onStop = () => finish(true);
+    const onFail = () => finish(false);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    wc.once('did-stop-loading', onStop);
+    wc.once('did-fail-load', onFail);
+  });
+}
+
+function normalizeTikhubPageVideo(item, account, previousMap) {
+  const id = tikhubString(item && item.id);
+  const title = tikhubString(item && item.title).slice(0, 500) || '当前页面作品';
+  const accountName = tikhubString(item && item.account) || account.label || account.url;
+  const videoUrl = tikhubString(item && item.videoUrl) || account.url;
+  const playCount = tikhubNumber(item && item.playCount);
+  const likeCount = tikhubNumber(item && item.likeCount);
+  const commentCount = tikhubNumber(item && item.commentCount);
+  const shareCount = tikhubNumber(item && item.shareCount);
+  const key = id ? (account.platform || 'tiktok') + ':' + id : account.url + ':' + tikhubStableHash(videoUrl + title);
+  const previous = (previousMap && previousMap[key]) || {};
+  const playGrowth = Math.max(0, playCount - (Number(previous.playCount) || 0));
+  const likeGrowth = Math.max(0, likeCount - (Number(previous.likeCount) || 0));
+  const commentGrowth = Math.max(0, commentCount - (Number(previous.commentCount) || 0));
+  const shareGrowth = Math.max(0, shareCount - (Number(previous.shareCount) || 0));
+  const engagement = likeCount + commentCount * 4 + shareCount * 6;
+  const engagementRate = playCount > 0 ? engagement / playCount : 0;
+  const growthScore = Math.log10(playGrowth + likeGrowth * 4 + commentGrowth * 8 + shareGrowth * 10 + 10) * 90;
+  const baseScore = Math.log10(playCount + 10) * 120 + Math.log10(engagement + 10) * 70 + Math.min(engagementRate * 12000, 180);
+  const score = Math.round(baseScore + growthScore);
+  const hotLevel = score >= 980 || playGrowth >= 500000 ? '爆款候选' : score >= 760 || playGrowth >= 100000 ? '增长关注' : '观察';
+  return {
+    key,
+    id,
+    account: accountName,
+    accountUrl: account.url,
+    title,
+    videoUrl,
+    playCount,
+    likeCount,
+    commentCount,
+    shareCount,
+    collectCount: 0,
+    playGrowth,
+    likeGrowth,
+    commentGrowth,
+    shareGrowth,
+    engagementRate,
+    createTime: 0,
+    createTimeText: '',
+    durationSec: 0,
+    score,
+    hotLevel,
+    source: item && item.source ? item.source : 'current-page',
+  };
+}
+
+async function extractVisibleTikhubPageVideos(options = {}) {
+  const accountUrl = normalizeNavigationUrl(options.accountUrl || '');
+  const maxVideos = Math.max(1, Math.min(100, Number(options.maxVideos) || 20));
+  let wc = options.webContents && !options.webContents.isDestroyed() ? options.webContents : null;
+  if (!wc) {
+    if (options.silent === true) {
+      wc = createInfoScraperHiddenBrowser();
+    } else if (videoSnifferView && !videoSnifferView.webContents.isDestroyed()) {
+      wc = videoSnifferView.webContents;
+    } else if (options.silent !== false) {
+      wc = createInfoScraperHiddenBrowser();
+    } else {
+      return { ok: false, error: '浏览器未初始化，无法读取当前页面作品' };
+    }
+  }
+  if (!wc || wc.isDestroyed()) return { ok: false, error: '浏览器未初始化，无法读取当前页面作品' };
+  const targetUsername = getTikhubUsernameFromUrl(accountUrl);
+  const currentUsername = getTikhubUsernameFromUrl(wc.getURL());
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  if (accountUrl && /^https?:\/\//i.test(accountUrl) && (!targetUsername || targetUsername !== currentUsername)) {
+    try {
+      const loadPromise = waitForVideoSnifferLoad(wc, 15000);
+      await wc.loadURL(accountUrl);
+      await loadPromise;
+      try { wc.focus(); } catch {}
+      await sleep(6500);
+    } catch (err) {
+      return { ok: false, error: '打开账号主页失败：' + (err && err.message ? err.message : String(err)) };
+    }
+  } else {
+    await sleep(800);
+  }
+
+  const wantedUsername = targetUsername || getTikhubUsernameFromUrl(wc.getURL());
+  const script = [
+    '(() => {',
+    'const wantedUsername = ' + JSON.stringify(wantedUsername) + ';',
+    'const maxVideos = ' + JSON.stringify(maxVideos) + ';',
+    'const clean = value => String(value || "").replace(/\\s+/g, " ").trim();',
+    'const usernameFromUrl = href => { try { const path = decodeURIComponent(new URL(href, location.href).pathname || ""); const match = path.match(/^\\/@([^/]+)\\/(?:video|photo)\\//i) || path.match(/^\\/@([^/]+)/i); return match ? String(match[1] || "").replace(/^@+/, "").toLowerCase() : ""; } catch (e) { return ""; } };',
+    'const idFromUrl = href => { try { const path = new URL(href, location.href).pathname || ""; const match = path.match(/\\/(?:video|photo)\\/(\\d+)/i); return match ? match[1] : ""; } catch (e) { return ""; } };',
+    'const countFromText = text => { const raw = String(text || "").replace(/,/g, " "); const matches = raw.match(/\\d+(?:\\.\\d+)?\\s*(?:K|M|B|k|m|b|万|亿)?/g) || []; let best = 0; for (const item of matches) { let valueText = String(item || "").trim(); let multiplier = 1; if (/万/.test(valueText)) multiplier = 10000; else if (/亿/.test(valueText)) multiplier = 100000000; else if (/k$/i.test(valueText)) multiplier = 1000; else if (/m$/i.test(valueText)) multiplier = 1000000; else if (/b$/i.test(valueText)) multiplier = 1000000000; valueText = valueText.replace(/[万亿kKmMbB]/g, "").trim(); const number = Number(valueText); if (Number.isFinite(number)) best = Math.max(best, Math.round(number * multiplier)); } return best; };',
+    'const pageUsername = usernameFromUrl(location.href);',
+    'const anchors = Array.from(document.querySelectorAll("a[href]"));',
+    'const seen = new Set();',
+    'const videos = [];',
+    'for (const anchor of anchors) {',
+    'let href = "";',
+    'try { href = new URL(anchor.getAttribute("href") || "", location.href).toString(); } catch (e) { continue; }',
+    'if (!/\\/@[^/]+\\/(?:video|photo)\\//i.test(new URL(href).pathname || "")) continue;',
+    'const username = usernameFromUrl(href) || pageUsername;',
+    'if (wantedUsername && username && username !== wantedUsername) continue;',
+    'const stableUrl = href.replace(/[?#].*$/, "");',
+    'if (seen.has(stableUrl)) continue;',
+    'seen.add(stableUrl);',
+    'let node = anchor;',
+    'let bestText = "";',
+    'for (let i = 0; node && i < 6; i += 1, node = node.parentElement) { const text = clean(node.innerText || node.textContent || ""); if (text.length > bestText.length && text.length < 1500) bestText = text; }',
+    'const img = anchor.querySelector("img") || (anchor.closest("div") && anchor.closest("div").querySelector("img"));',
+    'const title = clean(anchor.getAttribute("aria-label") || anchor.title || (img && img.alt) || bestText).slice(0, 300);',
+    'const countText = [anchor.getAttribute("aria-label"), anchor.title, img && img.alt, bestText].filter(Boolean).join(" ");',
+    'videos.push({ id: idFromUrl(href), title, videoUrl: stableUrl, account: username ? "@" + username : "", playCount: countFromText(countText), likeCount: 0, commentCount: 0, shareCount: 0, source: "current-page" });',
+    'if (videos.length >= maxVideos) break;',
+    '}',
+    'if (!videos.length) {',
+    'const html = document.documentElement.innerHTML || "";',
+    'const re = /(?:https?:\\/\\/(?:www\\.)?tiktok\\.com)?\\/@([A-Za-z0-9._-]+)\\/(video|photo)\\/(\\d+)/g;',
+    'let match;',
+    'while ((match = re.exec(html)) && videos.length < maxVideos) {',
+    'const username = String(match[1] || "").toLowerCase();',
+    'if (wantedUsername && username && username !== wantedUsername) continue;',
+    'const id = String(match[3] || "");',
+    'const stableUrl = "https://www.tiktok.com/@" + username + "/" + String(match[2] || "video") + "/" + id;',
+    'if (seen.has(stableUrl)) continue;',
+    'seen.add(stableUrl);',
+    'videos.push({ id, title: "TikTok 作品 " + id, videoUrl: stableUrl, account: username ? "@" + username : "", playCount: 0, likeCount: 0, commentCount: 0, shareCount: 0, source: "html-scan" });',
+    '}',
+    '}',
+    'return { ok: true, url: location.href, title: document.title, readyState: document.readyState, anchorCount: anchors.length, linkCount: document.links.length, bodyText: clean(document.body && document.body.innerText || "").slice(0, 240), pageUsername, videos };',
+    '})()'
+  ].join('\n');
+
+  const dataScript = [
+    '(() => {',
+    'const wantedUsername = ' + JSON.stringify(wantedUsername) + ';',
+    'const maxVideos = ' + JSON.stringify(maxVideos) + ';',
+    'const clean = value => String(value || "").replace(/\\s+/g, " ").trim();',
+    'const asNumber = value => { if (value == null) return 0; const raw = String(value).replace(/,/g, " ").trim(); const m = raw.match(/\\d+(?:\\.\\d+)?\\s*(?:K|M|B|k|m|b|万|亿)?/); if (!m) return 0; let text = m[0]; let mul = 1; if (/万/.test(text)) mul = 10000; else if (/亿/.test(text)) mul = 100000000; else if (/k$/i.test(text)) mul = 1000; else if (/m$/i.test(text)) mul = 1000000; else if (/b$/i.test(text)) mul = 1000000000; text = text.replace(/[万亿kKmMbB]/g, "").trim(); const n = Number(text); return Number.isFinite(n) ? Math.round(n * mul) : 0; };',
+    'const usernameFromUrl = href => { try { const path = decodeURIComponent(new URL(href, location.href).pathname || ""); const match = path.match(/^\\/@([^/]+)\\/(?:video|photo)\\//i) || path.match(/^\\/@([^/]+)/i); return match ? String(match[1] || "").replace(/^@+/, "").toLowerCase() : ""; } catch (e) { return ""; } };',
+    'const pageUsername = usernameFromUrl(location.href);',
+    'const pick = (obj, keys) => { if (!obj || typeof obj !== "object") return ""; for (const key of keys) { if (obj[key] != null && obj[key] !== "") return obj[key]; } return ""; };',
+    'const pickDeepNumber = obj => asNumber(pick(obj, ["playCount","play_count","viewCount","view_count","play","views","diggCount","digg_count"]));',
+    'const seen = new Set();',
+    'const videos = [];',
+    'const add = item => {',
+    '  if (!item || typeof item !== "object") return;',
+    '  const id = clean(pick(item, ["id","aweme_id","awemeId","item_id","itemId","video_id","videoId"]));',
+    '  const desc = clean(pick(item, ["desc","description","title","text","caption"]));',
+    '  let author = pick(item, ["author","authorInfo","user","owner"]);',
+    '  let username = clean(pick(item, ["uniqueId","unique_id","author_unique_id","nickname","authorName"]));',
+    '  if (author && typeof author === "object") username = clean(pick(author, ["uniqueId","unique_id","nickname","shortId","id"])) || username;',
+    '  username = username.replace(/^@+/, "").toLowerCase() || pageUsername;',
+    '  if (wantedUsername && username && username !== wantedUsername) return;',
+    '  let url = clean(pick(item, ["shareUrl","share_url","webVideoUrl","web_url","url"]));',
+    '  if (!/^https?:\\/\\//i.test(url) && id && username) url = "https://www.tiktok.com/@" + username + "/video/" + id;',
+    '  if (!id && !url) return;',
+    '  const key = (id || url).replace(/[?#].*$/, "");',
+    '  if (seen.has(key)) return;',
+    '  seen.add(key);',
+    '  const stats = pick(item, ["stats","statistics","statsV2","statisticsV2"]) || item;',
+    '  videos.push({ id, title: desc || (id ? "TikTok 作品 " + id : "TikTok 作品"), videoUrl: url || location.href, account: username ? "@" + username : "", playCount: pickDeepNumber(stats), likeCount: asNumber(pick(stats, ["diggCount","digg_count","likeCount","like_count"])), commentCount: asNumber(pick(stats, ["commentCount","comment_count"])), shareCount: asNumber(pick(stats, ["shareCount","share_count"])), source: "page-data" });',
+    '};',
+    'const visit = (value, depth) => {',
+    '  if (!value || depth > 9 || videos.length >= maxVideos) return;',
+    '  if (Array.isArray(value)) { for (const item of value) visit(item, depth + 1); return; }',
+    '  if (typeof value !== "object") return;',
+    '  const hasVideoId = pick(value, ["aweme_id","awemeId","item_id","itemId","video_id","videoId","id"]);',
+    '  const hasVideoText = pick(value, ["desc","description","title","text","caption"]);',
+    '  const hasStats = pick(value, ["stats","statistics","statsV2","statisticsV2","playCount","play_count","viewCount","view_count"]);',
+    '  if (hasVideoId && (hasVideoText || hasStats || pick(value, ["shareUrl","share_url","webVideoUrl","url"]))) add(value);',
+    '  for (const key of Object.keys(value).slice(0, 120)) visit(value[key], depth + 1);',
+    '};',
+    'const candidates = [window.__UNIVERSAL_DATA_FOR_REHYDRATION__, window.SIGI_STATE, window.__INITIAL_STATE__].filter(Boolean);',
+    'for (const item of candidates) visit(item, 0);',
+    'for (const script of Array.from(document.scripts || [])) {',
+    '  if (videos.length >= maxVideos) break;',
+    '  const text = script.textContent || "";',
+    '  if (!/(aweme|itemStruct|playCount|video|VideoObject)/i.test(text)) continue;',
+    '  const trimmed = text.trim();',
+    '  if (trimmed[0] === "{" || trimmed[0] === "[") { try { visit(JSON.parse(trimmed), 0); } catch (e) {} }',
+    '}',
+    'return { ok: true, url: location.href, title: document.title, videos };',
+    '})()'
+  ].join('\n');
+
+  const mergeBrowserResults = (base, extra) => {
+    const next = base && typeof base === 'object' ? { ...base } : { ok: true };
+    const seen = new Set();
+    const merged = [];
+    for (const source of [base, extra]) {
+      for (const item of ((source && Array.isArray(source.videos)) ? source.videos : [])) {
+        const key = String((item && (item.id || item.videoUrl || item.title)) || '').replace(/[?#].*$/, '');
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        merged.push(item);
+        if (merged.length >= maxVideos) break;
+      }
+      if (merged.length >= maxVideos) break;
+    }
+    next.videos = merged;
+    next.loadedVideoCount = merged.length;
+    return next;
+  };
+
+  const readPageResult = async () => {
+    const base = await wc.executeJavaScript(script, true).catch(err => ({ ok: false, error: err && err.message ? err.message : String(err), videos: [] }));
+    const extra = await wc.executeJavaScript(dataScript, true).catch(() => ({ ok: true, videos: [] }));
+    return mergeBrowserResults(base, extra);
+  };
+
+  try {
+    let result = await readPageResult();
+    let bestResult = result;
+    let bestCount = result && Array.isArray(result.videos) ? result.videos.length : 0;
+    let staleRounds = 0;
+    let scrollRounds = 0;
+    const maxScrollRounds = Math.max(24, Math.min(80, maxVideos * 2));
+    const activateAndScrollScript = [
+      '(async () => {',
+      'const sleep = ms => new Promise(r => setTimeout(r, ms));',
+      'const clean = value => String(value || "").replace(/\\s+/g, " ").trim();',
+      'try { const tab = Array.from(document.querySelectorAll("button,a,div,span")).find(el => /^(Videos|视频|作品)$/i.test(clean(el.innerText || el.textContent || ""))); if (tab && tab.click) tab.click(); } catch (e) {}',
+      'const candidates = [document.scrollingElement, document.documentElement, document.body];',
+      'try { candidates.push(...Array.from(document.querySelectorAll("*")).filter(el => { const style = getComputedStyle(el); return /(auto|scroll)/.test(style.overflowY || "") && el.scrollHeight > el.clientHeight + 300; }).slice(0, 12)); } catch (e) {}',
+      'const step = Math.max(900, Math.floor((window.innerHeight || 900) * 0.92));',
+      'for (const el of candidates) { try { if (!el) continue; el.scrollTop = Math.min(el.scrollHeight, (el.scrollTop || 0) + step); } catch (e) {} }',
+      'try { window.scrollBy(0, step); } catch (e) {}',
+      'await sleep(420);',
+      'for (const el of candidates) { try { if (!el) continue; el.dispatchEvent(new Event("scroll", { bubbles: true })); } catch (e) {} }',
+      'return { y: window.scrollY || 0, height: document.body && document.body.scrollHeight || 0 };',
+      '})()'
+    ].join('\n');
+    for (let attempt = 0; accountUrl && bestCount < maxVideos && attempt < maxScrollRounds && staleRounds < 12; attempt += 1) {
+      try { wc.focus(); } catch {}
+      try {
+        wc.sendInputEvent({ type: 'keyDown', keyCode: 'PageDown' });
+        wc.sendInputEvent({ type: 'keyUp', keyCode: 'PageDown' });
+        wc.sendInputEvent({ type: 'mouseWheel', x: 760, y: 820, deltaY: -1200, wheelTicksY: -10 });
+      } catch {}
+      try {
+        await wc.executeJavaScript(activateAndScrollScript, true);
+      } catch {}
+      scrollRounds += 1;
+      await sleep(Math.min(3600, 1500 + attempt * 140));
+      result = await readPageResult();
+      const count = result && Array.isArray(result.videos) ? result.videos.length : 0;
+      if (count > bestCount) {
+        bestResult = result;
+        bestCount = count;
+        staleRounds = 0;
+      } else {
+        staleRounds += 1;
+      }
+    }
+    result = bestResult || result;
+    if (result && result.ok && Array.isArray(result.videos) && result.videos.length) {
+      result.requestedMaxVideos = maxVideos;
+      result.loadedVideoCount = result.videos.length;
+      result.scrollRounds = scrollRounds;
+      result.exhausted = result.videos.length < maxVideos;
+      return result;
+    }
+    const debug = result && result.ok ? result : {};
+    const detail = [
+      debug.url && ('URL=' + debug.url),
+      debug.title && ('标题=' + debug.title),
+      debug.readyState && ('状态=' + debug.readyState),
+      Number.isFinite(Number(debug.anchorCount)) && ('链接数=' + debug.anchorCount),
+      debug.bodyText && ('页面文字=' + String(debug.bodyText).slice(0, 120)),
+    ].filter(Boolean).join('；');
+    return { ok: false, error: '后台浏览器已打开，但没有从页面提取到作品卡片' + (detail ? '（' + detail + '）' : '') };
+  } catch (err) {
+    return { ok: false, error: '读取后台浏览器页面作品失败：' + (err && err.message ? err.message : String(err)) };
+  }
+}
+
+function dramaRadarSnapshotPath() {
+  return path.join(app.getPath('userData'), 'drama-radar-snapshots.json');
+}
+
+function readDramaRadarSnapshot() {
+  try {
+    const file = dramaRadarSnapshotPath();
+    if (!fs.existsSync(file)) return { videos: {} };
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return data && typeof data === 'object' ? data : { videos: {} };
+  } catch {
+    return { videos: {} };
+  }
+}
+
+function writeDramaRadarSnapshot(videos) {
+  try {
+    const file = dramaRadarSnapshotPath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const map = {};
+    for (const item of videos || []) {
+      map[item.key] = {
+        key: item.key,
+        id: item.id,
+        account: item.account,
+        title: item.title,
+        videoUrl: item.videoUrl,
+        playCount: item.playCount,
+        likeCount: item.likeCount,
+        commentCount: item.commentCount,
+        shareCount: item.shareCount,
+        createTime: item.createTime,
+        score: item.score,
+        updatedAt: Date.now(),
+      };
+    }
+    fs.writeFileSync(file, JSON.stringify({ updatedAt: new Date().toISOString(), videos: map }, null, 2));
+  } catch {}
+}
+
+function parseDramaRadarAccountUrls(input) {
+  const raw = Array.isArray(input) ? input.join('\n') : String(input || '');
+  const matches = raw.match(/https?:\/\/[^\s"'<>，。；、]+/gi) || [];
+  const seen = new Set();
+  const urls = [];
+  for (const url of matches) {
+    const clean = cleanupImportedUrl(url);
+    if (!clean || seen.has(clean)) continue;
+    seen.add(clean);
+    urls.push(clean);
+  }
+  return urls.slice(0, 100);
+}
+
+async function fetchTikhubDramaRadar(payload) {
+  const apiKey = String((payload && payload.apiKey) || '').trim();
+  if (!apiKey) return { ok: false, error: '请先填写 TikHub API Key' };
+  const accountUrls = parseDramaRadarAccountUrls(payload && (payload.accountUrls || payload.accounts));
+  if (!accountUrls.length) return { ok: false, error: '请先填写要监控的 TikTok/抖音账号或视频链接' };
+  const maxVideos = Math.max(1, Math.min(100, Number(payload && payload.maxVideos) || 20));
+  const previous = readDramaRadarSnapshot();
+  const previousMap = (previous && previous.videos) || {};
+  const accounts = [];
+  const videos = [];
+  const warnings = [];
+
+  for (const url of accountUrls) {
+    const platform = detectTikhubPlatform(url);
+    const resourceType = detectTikhubResourceType(url);
+    const username = extractTikhubUsername(url);
+    const account = {
+      url,
+      platform,
+      username,
+      label: username ? '@' + username : url,
+      resourceType,
+      ok: false,
+      videoCount: 0,
+      attempts: [],
+    };
+
+    let normalized = [];
+    let partialNote = '';
+    try {
+      const res = await fetchTikhubVideoInfo({
+        apiKey,
+        shareUrl: url,
+        platform,
+        resourceType: resourceType === 'video' ? 'video' : 'user',
+        count: maxVideos,
+        requireVideos: resourceType !== 'video',
+      });
+      account.ok = !!(res && res.ok);
+      account.endpoint = res && res.endpoint;
+      account.attempts = (res && res.attempts) || [];
+
+      if (account.ok) {
+        const extracted = collectTikhubVideoItems(res.data);
+        normalized = extracted.map(item => normalizeTikhubVideo(item, account, previousMap))
+          .filter(item => item.id || item.title || item.playCount)
+          .sort((a, b) => (b.createTime || 0) - (a.createTime || 0) || b.playCount - a.playCount)
+          .slice(0, maxVideos);
+      } else {
+        account.error = (res && res.error) || 'TikHub 没返回可用数据';
+      }
+
+      if (!normalized.length && platform === 'tiktok') {
+        const pageFallback = await extractVisibleTikhubPageVideos({ accountUrl: url, maxVideos });
+        if (pageFallback && pageFallback.ok && Array.isArray(pageFallback.videos) && pageFallback.videos.length) {
+          normalized = pageFallback.videos.map(item => normalizeTikhubPageVideo(item, account, previousMap))
+            .filter(item => item.videoUrl || item.id || item.title)
+            .sort((a, b) => b.playCount - a.playCount || String(a.videoUrl).localeCompare(String(b.videoUrl)))
+            .slice(0, maxVideos);
+          if (pageFallback.exhausted && normalized.length < maxVideos) {
+            partialNote = '页面实际加载 ' + normalized.length + '/' + maxVideos + ' 条，已深度滚动 ' + (pageFallback.scrollRounds || 0) + ' 轮；如果账号确实有更多作品，通常是 TikTok 懒加载、登录提示或地区限制没有继续放出。';
+          }
+          account.ok = true;
+          account.endpoint = account.endpoint || 'current-page-visible-posts';
+          account.source = 'current-page';
+          warnings.push(account.label + '：TikHub 未返回作品列表，已从当前账号页面提取 ' + normalized.length + ' 条可见作品');
+        } else {
+          account.pageFallbackError = pageFallback && pageFallback.error;
+        }
+      }
+
+      account.videoCount = normalized.length;
+      if (normalized.length) {
+        videos.push(...normalized);
+      } else if (account.error) {
+        warnings.push(account.label + '：' + account.error);
+      } else {
+        const detail = account.pageFallbackError ? '；页面读取失败：' + account.pageFallbackError : '';
+        warnings.push(account.label + '：没有抽取到公开视频列表' + detail);
+      }
+    } catch (err) {
+      account.error = err && err.message ? err.message : String(err);
+      warnings.push(account.label + '：' + account.error);
+    }
+    accounts.push(account);
+  }
+
+  const sorted = videos.sort((a, b) => b.score - a.score || b.playGrowth - a.playGrowth || b.playCount - a.playCount)
+    .slice(0, Math.max(50, Math.min(500, accountUrls.length * maxVideos)));
+  writeDramaRadarSnapshot(sorted);
+  return {
+    ok: true,
+    snapshotAt: new Date().toISOString(),
+    accountCount: accounts.length,
+    videoCount: sorted.length,
+    accounts,
+    videos: sorted,
+    warnings,
+  };
+}
+
+
+function infoScraperStatePath() {
+  return path.join(app.getPath('userData'), 'info-scraper-state.json');
+}
+
+function defaultInfoScraperState() {
+  return {
+    maxVideos: 50,
+    accounts: [],
+    snapshots: {},
+    events: [],
+    completedSlots: {},
+    lastPollAt: '',
+    lastPollReason: '',
+    extractorPreference: 'auto',
+  };
+}
+
+function infoScraperLegacyApiText(text) {
+  return /\bTikHub\b|tikhub|TikHub endpoints|API Key is required|用户主页相关接口|自定义 endpoint/i.test(String(text || ''));
+}
+
+function normalizeInfoScraperState(raw) {
+  const base = defaultInfoScraperState();
+  const state = raw && typeof raw === 'object' ? { ...base, ...raw } : base;
+  state.accounts = Array.isArray(state.accounts) ? state.accounts : [];
+  state.accounts = state.accounts.map(account => {
+    if (!account || typeof account !== 'object') return account;
+    const next = { ...account };
+    if (infoScraperLegacyApiText(next.lastError)) next.lastError = '';
+    if (infoScraperLegacyApiText(next.lastPartialNote)) next.lastPartialNote = '';
+    return next;
+  });
+  state.snapshots = state.snapshots && typeof state.snapshots === 'object' ? state.snapshots : {};
+  state.events = Array.isArray(state.events)
+    ? state.events.filter(event => !infoScraperLegacyApiText((event && event.message) || '')).slice(-300)
+    : [];
+  state.completedSlots = state.completedSlots && typeof state.completedSlots === 'object' ? state.completedSlots : {};
+  state.maxVideos = Math.max(1, Math.min(100, Number(state.maxVideos) || 50));
+  return state;
+}
+
+function readInfoScraperState() {
+  try {
+    const file = infoScraperStatePath();
+    if (!fs.existsSync(file)) return defaultInfoScraperState();
+    return normalizeInfoScraperState(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch {
+    return defaultInfoScraperState();
+  }
+}
+
+function writeInfoScraperState(state) {
+  const next = normalizeInfoScraperState(state);
+  const file = infoScraperStatePath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(next, null, 2));
+  return next;
+}
+
+function infoScraperSlotKey(date = new Date()) {
+  const hour = Number(date.getHours()) || 0;
+  let slotHour = INFO_SCRAPER_POLL_HOURS[0];
+  for (const item of INFO_SCRAPER_POLL_HOURS) {
+    if (hour >= item) slotHour = item;
+  }
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + d + '-' + String(slotHour).padStart(2, '0');
+}
+
+function nextInfoScraperPollText(date = new Date()) {
+  const now = new Date(date.getTime());
+  for (const hour of INFO_SCRAPER_POLL_HOURS) {
+    const target = new Date(now);
+    target.setHours(hour, 0, 0, 0);
+    if (target > now) return target.toLocaleString('zh-CN', { hour12: false });
+  }
+  const target = new Date(now);
+  target.setDate(target.getDate() + 1);
+  target.setHours(INFO_SCRAPER_POLL_HOURS[0], 0, 0, 0);
+  return target.toLocaleString('zh-CN', { hour12: false });
+}
+
+function infoScraperAccountId(url) {
+  return crypto.createHash('sha1').update(String(url || '').trim().toLowerCase()).digest('hex').slice(0, 14);
+}
+
+function normalizeInfoScraperAccount(url, existing = {}) {
+  const cleanUrl = normalizeNavigationUrl(cleanupImportedUrl(url));
+  const platform = detectTikhubPlatform(cleanUrl);
+  const resourceType = detectTikhubResourceType(cleanUrl) === 'user' ? 'user' : 'video';
+  const username = extractTikhubUsername(cleanUrl);
+  const now = new Date().toISOString();
+  return {
+    id: existing.id || infoScraperAccountId(cleanUrl),
+    url: cleanUrl,
+    platform,
+    resourceType,
+    username,
+    label: existing.label || (username ? '@' + username : cleanUrl),
+    enabled: existing.enabled !== false,
+    createdAt: existing.createdAt || now,
+    updatedAt: now,
+    lastPolledAt: existing.lastPolledAt || '',
+    lastError: existing.lastError || '',
+    lastVideoCount: Number(existing.lastVideoCount) || 0,
+    lastNewCount: Number(existing.lastNewCount) || 0,
+    lastGrowthCount: Number(existing.lastGrowthCount) || 0,
+  };
+}
+
+function infoScraperPublicState(state = readInfoScraperState()) {
+  const safe = normalizeInfoScraperState(state);
+  const videos = [];
+  for (const account of safe.accounts) {
+    const snapshot = safe.snapshots[account.id];
+    if (snapshot && Array.isArray(snapshot.videos)) {
+      for (const video of snapshot.videos) videos.push({ ...video, accountId: account.id });
+    }
+  }
+  videos.sort((a, b) => (b.score || 0) - (a.score || 0) || (b.playGrowth || 0) - (a.playGrowth || 0) || (b.playCount || 0) - (a.playCount || 0));
+  const visibleVideos = videos.slice(0, 500);
+  return {
+    ok: true,
+    hasApiKey: false,
+    apiKey: '',
+    loginStatus: infoScraperLoginStatusCache,
+    maxVideos: safe.maxVideos,
+    accounts: safe.accounts,
+    events: safe.events.slice(-160).reverse(),
+    videos: visibleVideos,
+    bilingualRows: visibleVideos.map((video, index) => infoScraperBilingualRecord(video, index)),
+    headers: SHORT_DRAMA_BILINGUAL_HEADERS,
+    snapshots: safe.snapshots,
+    lastPollAt: safe.lastPollAt || '',
+    lastPollReason: safe.lastPollReason || '',
+    nextPollAt: nextInfoScraperPollText(),
+    pollHours: INFO_SCRAPER_POLL_HOURS,
+    polling: infoScraperPolling,
+    extractor: {
+      primary: 'yt-dlp',
+      fallback: 'browser',
+      note: '不再走 TikHub：先用 yt-dlp 用户页提取器，失败时复用内置浏览器登录态读取可见作品。',
+    },
+  };
+}
+
+
+const SHORT_DRAMA_BILINGUAL_HEADERS = [
+  'Rank / 排名',
+  'Drama ID / 短剧ID',
+  'English Title / 英文剧名',
+  'Chinese Title / 中文剧名',
+  'Episodes / 集数',
+  'Views / 观看数',
+  'Duration Seconds / 总时长(秒)',
+  'Duration Minutes / 总时长(分钟)',
+  'Limited Free / 是否限免',
+  'English Themes / 英文题材',
+  'Chinese Themes / 中文题材',
+  'English Description / 英文简介',
+  'Chinese Description / 中文简介',
+];
+
+function infoScraperTextHasChinese(text) {
+  return /[\u3400-\u9fff]/.test(String(text || ''));
+}
+
+function infoScraperCleanDramaTitle(text) {
+  let value = String(text || '').replace(/\s+/g, ' ').trim();
+  value = value.replace(/\b(original sound|使用 .*? 的 原声|使用 .*? 的原声)\b/ig, '').trim();
+  value = value.replace(/#[\p{L}\p{N}_-]+/gu, '').replace(/\s+/g, ' ').trim();
+  value = value.replace(/^[·•\-\s]+|[·•\-\s]+$/g, '').trim();
+  return value.slice(0, 180);
+}
+
+function infoScraperExtractThemes(text, chinese) {
+  const tags = String(text || '').match(/#[\p{L}\p{N}_-]+/gu) || [];
+  const seen = new Set();
+  const out = [];
+  for (const tag of tags) {
+    const clean = tag.replace(/^#+/, '').trim();
+    if (!clean) continue;
+    if (chinese !== infoScraperTextHasChinese(clean)) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= 8) break;
+  }
+  return out.join('; ');
+}
+
+function infoScraperLimitedFreeText(video) {
+  const text = [video && video.title, video && video.videoUrl, video && video.accountUrl].join(' ');
+  if (/\bfree\b|watch all for free|免费观看|免费|限免/i.test(text)) return '是 / Yes';
+  return '';
+}
+
+function infoScraperDramaId(video) {
+  const id = tikhubString(video && video.id) || tikhubString(video && video.key).replace(/^[^:]+:/, '');
+  return id ? 'ID ' + id : '';
+}
+
+function infoScraperBilingualRecord(video, index) {
+  const rawTitle = String(video && video.title || '').trim();
+  const cleanTitle = infoScraperCleanDramaTitle(rawTitle) || rawTitle.slice(0, 180);
+  const isChineseTitle = infoScraperTextHasChinese(cleanTitle);
+  const durationSec = Number(video && video.durationSec) || 0;
+  return {
+    rank: index + 1,
+    dramaId: infoScraperDramaId(video),
+    englishTitle: isChineseTitle ? '' : cleanTitle,
+    chineseTitle: isChineseTitle ? cleanTitle : '',
+    episodes: '',
+    views: Number(video && video.playCount) || 0,
+    durationSeconds: durationSec || '',
+    durationMinutes: durationSec ? Number((durationSec / 60).toFixed(1)) : '',
+    limitedFree: infoScraperLimitedFreeText(video),
+    englishThemes: infoScraperExtractThemes(rawTitle, false),
+    chineseThemes: infoScraperExtractThemes(rawTitle, true),
+    englishDescription: isChineseTitle ? '' : rawTitle,
+    chineseDescription: isChineseTitle ? rawTitle : '',
+    videoUrl: String(video && video.videoUrl || ''),
+  };
+}
+
+function infoScraperBilingualRows(state = readInfoScraperState()) {
+  const publicState = infoScraperPublicState(state);
+  return (publicState.bilingualRows || []).map(row => [
+    row.rank,
+    row.dramaId,
+    row.englishTitle,
+    row.chineseTitle,
+    row.episodes,
+    row.views,
+    row.durationSeconds,
+    row.durationMinutes,
+    row.limitedFree,
+    row.englishThemes,
+    row.chineseThemes,
+    row.englishDescription,
+    row.chineseDescription,
+  ]);
+}
+function exportInfoScraperBilingualList() {
+  if (!xlsx) return { ok: false, error: '缺少 xlsx 导出库，请重新安装依赖后再试' };
+  const rows = infoScraperBilingualRows();
+  if (!rows.length) return { ok: false, error: '还没有可导出的抓取数据，请先立即抓取账号' };
+  const aoa = [SHORT_DRAMA_BILINGUAL_HEADERS, ...rows];
+  const worksheet = xlsx.utils.aoa_to_sheet(aoa);
+  worksheet['!cols'] = [
+    { wch: 12 }, { wch: 24 }, { wch: 42 }, { wch: 28 }, { wch: 12 },
+    { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 28 },
+    { wch: 28 }, { wch: 80 }, { wch: 80 },
+  ];
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'Bilingual List');
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12);
+  const target = dialog.showSaveDialogSync(infoScraperWindow || mainWindow, {
+    title: '导出对标短剧表格',
+    defaultPath: path.join(app.getPath('documents'), 'shortdramatime_drama_list_bilingual_' + stamp + '.xlsx'),
+    filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+  });
+  if (!target) return { ok: false, cancelled: true, error: '已取消导出' };
+  xlsx.writeFile(workbook, target);
+  const state = readInfoScraperState();
+  appendInfoScraperEvent(state, { type: 'export', message: '已导出对标短剧表格：' + rows.length + ' 条' });
+  writeInfoScraperState(state);
+  return { ok: true, path: target, count: rows.length };
+}
+
+function sendInfoScraperEvent(payload) {
+  const event = { time: new Date().toISOString(), ...(payload || {}) };
+  if (infoScraperWindow && !infoScraperWindow.isDestroyed()) {
+    infoScraperWindow.webContents.send('info-scraper:event', event);
+  }
+  if (videoSnifferWindow && !videoSnifferWindow.isDestroyed()) {
+    videoSnifferWindow.webContents.send('info-scraper:event', event);
+  }
+}
+
+function appendInfoScraperEvent(state, event) {
+  state.events = Array.isArray(state.events) ? state.events : [];
+  state.events.push({ time: new Date().toISOString(), ...(event || {}) });
+  if (state.events.length > 300) state.events = state.events.slice(-300);
+}
+
+function previousVideoMapForInfoScraper(state, accountId) {
+  const snapshot = state.snapshots && state.snapshots[accountId];
+  const map = {};
+  if (snapshot && Array.isArray(snapshot.videos)) {
+    for (const video of snapshot.videos) {
+      if (video && video.key) map[video.key] = video;
+    }
+  }
+  return map;
+}
+
+const INFO_SCRAPER_SOURCE_LABELS = {
+  ytdlp: 'yt-dlp',
+  browser: '内置浏览器兜底',
+};
+
+let infoScraperYtDlpWorkingCommand = null;
+
+function infoScraperNormalizeCount(value) {
+  if (value == null) return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.round(value));
+  const raw = String(value || '').trim().replace(/,/g, '');
+  if (!raw) return 0;
+  const chinese = raw.match(/([\d.]+)\s*(亿|万)/);
+  if (chinese) return Math.round(Number(chinese[1]) * (chinese[2] === '亿' ? 100000000 : 10000)) || 0;
+  const compact = raw.match(/([\d.]+)\s*([kmb])/i);
+  if (compact) {
+    const unit = compact[2].toLowerCase();
+    const base = Number(compact[1]) || 0;
+    return Math.round(base * (unit === 'k' ? 1000 : unit === 'm' ? 1000000 : 1000000000));
+  }
+  const num = Number(raw.replace(/[^\d.]/g, ''));
+  return Number.isFinite(num) ? Math.round(num) : 0;
+}
+
+function infoScraperText(value) {
+  return String(value == null ? '' : value).trim();
+}
+
+function infoScraperIdFromUrl(url) {
+  const text = infoScraperText(url);
+  if (!text) return '';
+  try {
+    const u = new URL(text);
+    const m = u.pathname.match(/\/video\/(\d+)/i) || u.pathname.match(/(?:aweme_id|item_id)[=/](\d+)/i);
+    if (m) return m[1];
+    const q = u.searchParams.get('item_id') || u.searchParams.get('aweme_id') || u.searchParams.get('id');
+    if (q) return q;
+  } catch {}
+  const fallback = text.match(/(?:video|item|aweme)[^\d]*(\d{8,})/i);
+  return fallback ? fallback[1] : '';
+}
+
+function infoScraperAccountLabelFromUrl(url) {
+  const text = infoScraperText(url);
+  try {
+    const u = new URL(text);
+    const at = u.pathname.match(/@([^/?#]+)/);
+    if (at) return '@' + decodeURIComponent(at[1]);
+    return u.hostname.replace(/^www\./, '') + u.pathname.replace(/\/$/, '');
+  } catch {
+    return text.slice(0, 80);
+  }
+}
+
+function infoScraperYtDlpCandidates() {
+  const roots = [];
+  if (process.resourcesPath) {
+    roots.push(process.resourcesPath);
+    roots.push(path.join(process.resourcesPath, 'app.asar.unpacked'));
+  }
+  roots.push(__dirname);
+  try { roots.push(path.dirname(app.getPath('exe'))); } catch {}
+  try { roots.push(app.getPath('userData')); } catch {}
+  const seen = new Set();
+  const out = [];
+  for (const root of roots) {
+    if (!root || seen.has(root)) continue;
+    seen.add(root);
+    for (const rel of ['bin/yt-dlp.exe', 'yt-dlp.exe', 'bin/yt-dlp', 'yt-dlp']) {
+      const full = path.join(root, rel);
+      if (fs.existsSync(full)) out.push({ label: '内置 yt-dlp', command: [full], path: full });
+    }
+  }
+  out.push({ label: 'PATH yt-dlp', command: ['yt-dlp'] });
+  out.push({ label: 'Python yt_dlp', command: ['python', '-m', 'yt_dlp'] });
+  out.push({ label: 'Python launcher yt_dlp', command: ['py', '-m', 'yt_dlp'] });
+  return out;
+}
+
+function runInfoScraperCommand(spec, args, options = {}) {
+  return new Promise(resolve => {
+    const command = spec.command[0];
+    const finalArgs = spec.command.slice(1).concat(args || []);
+    const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 120000);
+    const maxBuffer = Math.max(1024 * 1024, Number(options.maxBuffer) || 160 * 1024 * 1024);
+    let child;
+    let stdout = '';
+    let stderr = '';
+    let killed = false;
+    try {
+      child = spawn(command, finalArgs, { windowsHide: true, cwd: __dirname });
+    } catch (err) {
+      resolve({ ok: false, code: -1, stdout, stderr, error: err && err.message ? err.message : String(err), label: spec.label });
+      return;
+    }
+    const timer = setTimeout(() => {
+      killed = true;
+      try { child.kill('SIGKILL'); } catch {}
+    }, timeoutMs);
+    child.stdout.on('data', data => {
+      stdout += data.toString('utf8');
+      if (stdout.length > maxBuffer) {
+        killed = true;
+        try { child.kill('SIGKILL'); } catch {}
+      }
+    });
+    child.stderr.on('data', data => {
+      stderr += data.toString('utf8');
+      if (stderr.length > maxBuffer) stderr = stderr.slice(-maxBuffer);
+    });
+    child.on('error', err => {
+      clearTimeout(timer);
+      resolve({ ok: false, code: -1, stdout, stderr, error: err && err.message ? err.message : String(err), label: spec.label });
+    });
+    child.on('close', code => {
+      clearTimeout(timer);
+      resolve({
+        ok: !killed && code === 0,
+        code,
+        stdout,
+        stderr,
+        error: killed ? '命令超时或输出过大' : '',
+        label: spec.label,
+        command,
+      });
+    });
+  });
+}
+
+async function resolveInfoScraperYtDlpCommand() {
+  if (infoScraperYtDlpWorkingCommand) return infoScraperYtDlpWorkingCommand;
+  for (const spec of infoScraperYtDlpCandidates()) {
+    const probe = await runInfoScraperCommand(spec, ['--version'], { timeoutMs: 8000, maxBuffer: 512 * 1024 });
+    if (probe.ok) {
+      infoScraperYtDlpWorkingCommand = { ...spec, version: infoScraperText(probe.stdout || probe.stderr).split(/\s+/)[0] };
+      return infoScraperYtDlpWorkingCommand;
+    }
+  }
+  return null;
+}
+
+async function getInfoScraperExtractorStatus() {
+  const command = await resolveInfoScraperYtDlpCommand();
+  return {
+    ok: true,
+    primary: command ? 'yt-dlp 可用：' + (command.version || command.label || '') : 'yt-dlp 未检测到，将只用内置浏览器兜底',
+    ytdlpAvailable: !!command,
+    ytdlpVersion: command && command.version || '',
+    ytdlpLabel: command && command.label || '',
+    browserFallback: true,
+    strategy: '先用 yt-dlp 的 TikTok 用户页提取器；失败时复用内置浏览器登录态读取当前可见作品。',
+  };
+}
+
+async function writeInfoScraperCookieJar() {
+  try {
+    const ses = session.fromPartition(VIDEO_SNIFFER_PARTITION);
+    const cookies = await ses.cookies.get({});
+    const keep = cookies.filter(cookie => /(^|\.)tiktok\.com$/i.test(String(cookie.domain || '').replace(/^\./, '')) || /\.tiktok\.com$/i.test(String(cookie.domain || '')));
+    if (!keep.length) return '';
+    const lines = ['# Netscape HTTP Cookie File'];
+    for (const cookie of keep) {
+      const domain = String(cookie.domain || '').startsWith('.') ? String(cookie.domain) : '.' + String(cookie.domain || 'tiktok.com');
+      const includeSubdomains = domain.startsWith('.') ? 'TRUE' : 'FALSE';
+      const cookiePath = cookie.path || '/';
+      const secure = cookie.secure ? 'TRUE' : 'FALSE';
+      const expiry = Math.max(0, Math.round(Number(cookie.expirationDate) || Math.floor(Date.now() / 1000) + 86400));
+      lines.push([domain, includeSubdomains, cookiePath, secure, expiry, cookie.name || '', cookie.value || ''].join('\t'));
+    }
+    const target = path.join(app.getPath('temp'), 'gaiwen-tiktok-cookies-' + Date.now() + '-' + Math.random().toString(16).slice(2) + '.txt');
+    fs.writeFileSync(target, lines.join('\n'), 'utf8');
+    return target;
+  } catch {
+    return '';
+  }
+}
+
+function parseYtDlpPayload(text) {
+  const raw = infoScraperText(text);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {}
+  const entries = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const item = infoScraperText(line);
+    if (!item || !item.startsWith('{')) continue;
+    try { entries.push(JSON.parse(item)); } catch {}
+  }
+  return entries.length ? { entries } : null;
+}
+
+function collectYtDlpEntries(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.entries)) return payload.entries.filter(Boolean);
+  return [payload];
+}
+
+function normalizeYtDlpVideo(raw, account, previousMap = {}) {
+  const webpageUrl = infoScraperText(raw.webpage_url || raw.original_url || raw.url || raw.id);
+  let videoUrl = webpageUrl;
+  const accountUrl = account && account.url || '';
+  const username = account && account.username || '';
+  const id = infoScraperText(raw.id || infoScraperIdFromUrl(webpageUrl));
+  if ((!/^https?:\/\//i.test(videoUrl)) && id && username && /tiktok\.com/i.test(accountUrl)) {
+    videoUrl = 'https://www.tiktok.com/@' + username.replace(/^@/, '') + '/video/' + id;
+  }
+  if (!/^https?:\/\//i.test(videoUrl) && raw.url && /^https?:\/\//i.test(String(raw.url))) {
+    videoUrl = String(raw.url);
+  }
+  const key = 'ytdlp:' + (id || videoUrl || crypto.createHash('sha1').update(JSON.stringify(raw).slice(0, 1200)).digest('hex').slice(0, 16));
+  const previous = previousMap[key] || {};
+  const playCount = infoScraperNormalizeCount(raw.view_count ?? raw.play_count ?? raw.statistics?.play_count ?? raw.stats?.playCount);
+  const likeCount = infoScraperNormalizeCount(raw.like_count ?? raw.likeCount ?? raw.statistics?.digg_count ?? raw.stats?.diggCount);
+  const commentCount = infoScraperNormalizeCount(raw.comment_count ?? raw.commentCount ?? raw.statistics?.comment_count ?? raw.stats?.commentCount);
+  const shareCount = infoScraperNormalizeCount(raw.repost_count ?? raw.share_count ?? raw.shareCount ?? raw.statistics?.share_count ?? raw.stats?.shareCount);
+  const durationSec = Math.round(Number(raw.duration ?? raw.duration_sec ?? raw.durationSeconds) || 0);
+  const timestamp = Number(raw.timestamp || raw.release_timestamp || raw.create_time || 0);
+  const title = infoScraperText(raw.title || raw.fulltitle || raw.description || raw.alt_title || account?.label || 'TikTok 作品');
+  return {
+    key,
+    id,
+    title,
+    videoUrl,
+    accountUrl,
+    accountLabel: account && account.label || '',
+    platform: account && account.platform || 'tiktok',
+    uploader: infoScraperText(raw.uploader || raw.channel || raw.uploader_id || username || account?.label),
+    playCount,
+    likeCount,
+    commentCount,
+    shareCount,
+    playGrowth: Math.max(0, playCount - (Number(previous.playCount) || 0)),
+    likeGrowth: Math.max(0, likeCount - (Number(previous.likeCount) || 0)),
+    commentGrowth: Math.max(0, commentCount - (Number(previous.commentCount) || 0)),
+    shareGrowth: Math.max(0, shareCount - (Number(previous.shareCount) || 0)),
+    durationSec,
+    createdAt: timestamp ? new Date(timestamp * 1000).toISOString() : '',
+    scrapedAt: new Date().toISOString(),
+    source: 'yt-dlp',
+    score: playCount + likeCount * 12 + commentCount * 25 + shareCount * 35,
+  };
+}
+
+async function extractInfoScraperYtDlpVideos(account, maxVideos, previousMap = {}) {
+  const command = await resolveInfoScraperYtDlpCommand();
+  if (!command) return { ok: false, error: '未找到 yt-dlp：请确认安装包内有 bin/yt-dlp.exe，或系统 PATH/Python 中可运行 yt-dlp' };
+  const cookieJar = await writeInfoScraperCookieJar();
+  const common = [
+    '--dump-single-json',
+    '--no-warnings',
+    '--ignore-errors',
+    '--skip-download',
+    '--playlist-end', String(Math.max(1, Math.min(300, Number(maxVideos) || 50))),
+    '--extractor-retries', '3',
+    '--socket-timeout', '30',
+    '--force-ipv4',
+  ];
+  if (cookieJar) common.push('--cookies', cookieJar);
+  common.push(account.url);
+  let result = await runInfoScraperCommand(command, common, { timeoutMs: 240000, maxBuffer: 180 * 1024 * 1024 });
+  if (!result.ok || !parseYtDlpPayload(result.stdout)) {
+    const flat = [
+      '--dump-single-json',
+      '--flat-playlist',
+      '--no-warnings',
+      '--ignore-errors',
+      '--playlist-end', String(Math.max(1, Math.min(300, Number(maxVideos) || 50))),
+    ];
+    if (cookieJar) flat.push('--cookies', cookieJar);
+    flat.push(account.url);
+    result = await runInfoScraperCommand(command, flat, { timeoutMs: 180000, maxBuffer: 180 * 1024 * 1024 });
+  }
+  if (cookieJar) {
+    try { fs.unlinkSync(cookieJar); } catch {}
+  }
+  const payload = parseYtDlpPayload(result.stdout);
+  const entries = collectYtDlpEntries(payload);
+  const normalized = entries
+    .map(item => normalizeYtDlpVideo(item, account, previousMap))
+    .filter(item => item.videoUrl || item.id || item.title)
+    .slice(0, maxVideos);
+  if (!normalized.length) {
+    return {
+      ok: false,
+      error: result.error || infoScraperText(result.stderr).slice(0, 500) || 'yt-dlp 没有返回作品列表',
+      stderr: result.stderr,
+      command: command.label,
+    };
+  }
+  return {
+    ok: true,
+    source: 'yt-dlp',
+    command: command.label,
+    version: command.version || '',
+    videos: normalized,
+  };
+}
+
+function normalizeBrowserFallbackVideo(raw, account, previousMap = {}) {
+  const videoUrl = infoScraperText(raw.videoUrl || raw.url || raw.href);
+  const id = infoScraperText(raw.id || infoScraperIdFromUrl(videoUrl));
+  const key = 'browser:' + (id || videoUrl || crypto.createHash('sha1').update(JSON.stringify(raw).slice(0, 1200)).digest('hex').slice(0, 16));
+  const previous = previousMap[key] || {};
+  const playCount = infoScraperNormalizeCount(raw.playCount ?? raw.views ?? raw.viewText);
+  const likeCount = infoScraperNormalizeCount(raw.likeCount ?? raw.likes);
+  const commentCount = infoScraperNormalizeCount(raw.commentCount ?? raw.comments);
+  const shareCount = infoScraperNormalizeCount(raw.shareCount ?? raw.shares);
+  const title = infoScraperText(raw.title || raw.desc || raw.description || account.label || 'TikTok 作品');
+  const durationSec = Math.round(Number(raw.durationSec || raw.duration || 0) || 0);
+  return {
+    key,
+    id,
+    title,
+    videoUrl,
+    accountUrl: account.url,
+    accountLabel: account.label,
+    platform: account.platform || 'tiktok',
+    uploader: account.username || account.label,
+    playCount,
+    likeCount,
+    commentCount,
+    shareCount,
+    playGrowth: Math.max(0, playCount - (Number(previous.playCount) || 0)),
+    likeGrowth: Math.max(0, likeCount - (Number(previous.likeCount) || 0)),
+    commentGrowth: Math.max(0, commentCount - (Number(previous.commentCount) || 0)),
+    shareGrowth: Math.max(0, shareCount - (Number(previous.shareCount) || 0)),
+    durationSec,
+    createdAt: '',
+    scrapedAt: new Date().toISOString(),
+    source: 'browser',
+    score: playCount + likeCount * 12 + commentCount * 25 + shareCount * 35,
+  };
+}
+
+async function extractInfoScraperBrowserVideos(account, maxVideos, previousMap = {}) {
+  const pageFallback = await extractVisibleTikhubPageVideos({ accountUrl: account.url, maxVideos, silent: true });
+  if (!pageFallback || !pageFallback.ok || !Array.isArray(pageFallback.videos) || !pageFallback.videos.length) {
+    return { ok: false, error: (pageFallback && pageFallback.error) || '内置浏览器没有读到当前可见作品列表' };
+  }
+  const videos = pageFallback.videos
+    .map(item => normalizeBrowserFallbackVideo(item, account, previousMap))
+    .filter(item => item.videoUrl || item.id || item.title)
+    .slice(0, maxVideos);
+  return {
+    ok: !!videos.length,
+    source: 'browser',
+    videos,
+    exhausted: pageFallback.exhausted,
+    scrollRounds: pageFallback.scrollRounds || 0,
+    error: videos.length ? '' : '内置浏览器没有整理出可用作品',
+  };
+}
+
+async function refreshInfoScraperAccounts(options = {}) {
+  if (infoScraperPolling) return { ok: false, error: '信息抓取正在轮询中，请稍后再试' };
+  let state = readInfoScraperState();
+  const ids = Array.isArray(options.accountIds) ? new Set(options.accountIds.map(String)) : null;
+  const targets = state.accounts.filter(account => account && account.enabled !== false && (!ids || ids.has(String(account.id))));
+  if (!targets.length) return { ok: false, error: '没有可轮询的账号，请先保存账号' };
+  const maxVideos = Math.max(1, Math.min(300, Number(options.maxVideos || state.maxVideos) || 50));
+  const reason = String(options.reason || 'manual');
+  infoScraperPolling = true;
+  sendInfoScraperEvent({ type: 'start', message: '开始信息抓取：' + targets.length + ' 个账号；主引擎 yt-dlp，失败走内置浏览器兜底' });
+
+  try {
+    let totalVideos = 0;
+    let totalNew = 0;
+    let totalGrowth = 0;
+    for (const target of targets) {
+      state = readInfoScraperState();
+      const accountIndex = state.accounts.findIndex(item => item.id === target.id);
+      if (accountIndex < 0) continue;
+      const account = state.accounts[accountIndex];
+      const previousMap = previousVideoMapForInfoScraper(state, account.id);
+      sendInfoScraperEvent({ type: 'account', accountId: account.id, message: account.label + '：开始抓取 ' + maxVideos + ' 条作品' });
+      try {
+        let extract = await extractInfoScraperYtDlpVideos(account, maxVideos, previousMap);
+        let partialNote = '';
+        if (!extract.ok || !extract.videos.length) {
+          const ytdlpError = extract.error || 'yt-dlp 没有返回可用作品';
+          sendInfoScraperEvent({ type: 'fallback', accountId: account.id, message: account.label + '：yt-dlp 未拿到数据，改用内置浏览器兜底；' + ytdlpError });
+          extract = await extractInfoScraperBrowserVideos(account, maxVideos, previousMap);
+          if (extract.ok && extract.exhausted && extract.videos.length < maxVideos) {
+            partialNote = '浏览器页面实际加载 ' + extract.videos.length + '/' + maxVideos + ' 条，已深度滚动 ' + (extract.scrollRounds || 0) + ' 轮；如果账号确实有更多作品，通常是 TikTok 懒加载、登录提示或地区限制没有继续放出。';
+          }
+        }
+
+        const normalized = (extract.videos || [])
+          .filter(item => item.videoUrl || item.id || item.title)
+          .sort((a, b) => (b.playCount || 0) - (a.playCount || 0) || String(a.videoUrl).localeCompare(String(b.videoUrl)))
+          .slice(0, maxVideos);
+        const previousKeys = new Set(Object.keys(previousMap));
+        const newCount = normalized.filter(item => item.key && !previousKeys.has(item.key)).length;
+        const growthCount = normalized.filter(item => Number(item.playGrowth) > 0 || Number(item.likeGrowth) > 0 || Number(item.commentGrowth) > 0 || Number(item.shareGrowth) > 0).length;
+        account.lastPolledAt = new Date().toISOString();
+        account.lastVideoCount = normalized.length;
+        account.lastNewCount = newCount;
+        account.lastGrowthCount = growthCount;
+        account.lastError = normalized.length ? '' : ((extract && extract.error) || '没有抓到当前账号作品');
+        account.lastPartialNote = partialNote;
+        account.lastExtractor = extract.source || '';
+        account.updatedAt = account.lastPolledAt;
+        state.snapshots[account.id] = { updatedAt: account.lastPolledAt, source: extract.source || 'unknown', videos: normalized };
+        appendInfoScraperEvent(state, {
+          type: normalized.length ? 'success' : 'warning',
+          accountId: account.id,
+          message: account.label + '：作品 ' + normalized.length + ' 条，新作品 ' + newCount + ' 条，有增长 ' + growthCount + ' 条；来源 ' + (INFO_SCRAPER_SOURCE_LABELS[extract.source] || extract.source || '未知') + (partialNote ? '；' + partialNote : '') + (account.lastError ? '；' + account.lastError : ''),
+        });
+        totalVideos += normalized.length;
+        totalNew += newCount;
+        totalGrowth += growthCount;
+        state.accounts[accountIndex] = account;
+        state.lastPollAt = new Date().toISOString();
+        state.lastPollReason = reason;
+        writeInfoScraperState(state);
+        sendInfoScraperEvent({ type: 'account-done', accountId: account.id, message: account.label + '：完成，' + normalized.length + ' 条作品' });
+      } catch (err) {
+        account.lastPolledAt = new Date().toISOString();
+        account.lastError = err && err.message ? err.message : String(err);
+        state.accounts[accountIndex] = account;
+        appendInfoScraperEvent(state, { type: 'error', accountId: account.id, message: account.label + '：' + account.lastError });
+        writeInfoScraperState(state);
+        sendInfoScraperEvent({ type: 'account-error', accountId: account.id, message: account.label + '：' + account.lastError });
+      }
+    }
+    state = readInfoScraperState();
+    appendInfoScraperEvent(state, { type: 'done', message: '信息抓取完成：作品 ' + totalVideos + ' 条，新作品 ' + totalNew + ' 条，有增长 ' + totalGrowth + ' 条' });
+    state.lastPollAt = new Date().toISOString();
+    state.lastPollReason = reason;
+    if (options.slotKey) state.completedSlots[options.slotKey] = state.lastPollAt;
+    writeInfoScraperState(state);
+    sendInfoScraperEvent({ type: 'done', message: '信息抓取完成：作品 ' + totalVideos + ' 条' });
+    return infoScraperPublicState(state);
+  } finally {
+    infoScraperPolling = false;
+    sendInfoScraperEvent({ type: 'idle', message: '信息抓取空闲' });
+  }
+}
+async function runDueInfoScraperPoll() {
+  if (infoScraperPolling) return;
+  const state = readInfoScraperState();
+  if (!state.accounts.some(account => account.enabled !== false)) return;
+  const now = new Date();
+  const hour = now.getHours();
+  const dueHour = INFO_SCRAPER_POLL_HOURS.filter(item => hour >= item).pop();
+  if (dueHour == null) return;
+  const slot = infoScraperSlotKey(now);
+  if (state.completedSlots && state.completedSlots[slot]) return;
+  try {
+    await refreshInfoScraperAccounts({ reason: 'auto', slotKey: slot });
+  } catch (err) {
+    const next = readInfoScraperState();
+    appendInfoScraperEvent(next, { type: 'error', message: '自动轮询失败：' + (err && err.message ? err.message : String(err)) });
+    writeInfoScraperState(next);
+  }
+}
+
+function scheduleInfoScraperPolling() {
+  if (infoScraperPollTimer) clearInterval(infoScraperPollTimer);
+  setTimeout(() => runDueInfoScraperPoll().catch(() => {}), 8000);
+  infoScraperPollTimer = setInterval(() => {
+    runDueInfoScraperPoll().catch(() => {});
+  }, 30 * 60 * 1000);
+}
+
 
 const IMPORT_URL_RE = /https?:\/\/(?:(?!https?:\/\/)[^\s"'<>])+/gi;
 
@@ -1098,6 +3125,7 @@ const videoAnalysisAborts = new Set();
 function episodeNoFromLocalVideoName(fileName) {
   const text = String(fileName || '');
   const patterns = [
+    /s\d{1,3}e0*(\d{1,4})/i,
     /第\s*0*(\d{1,4})\s*集/i,
     /(?:^|[^\d])ep(?:isode)?[_\-\s]*0*(\d{1,4})(?:[^\d]|$)/i,
     /(?:^|[^\d])0*(\d{1,4})(?:[^\d]|$)/,
@@ -1292,6 +3320,24 @@ function isVideoAnalysisResultName(name) {
   return /视频解析\.txt$/i.test(String(name || ''));
 }
 
+function isAnalysisCacheDirName(name) {
+  return String(name || '').toLowerCase() === ANALYSIS_CACHE_DIR_NAME.toLowerCase();
+}
+
+function isAnalysisCacheDirPath(target) {
+  return isAnalysisCacheDirName(path.basename(path.resolve(String(target || ''))));
+}
+
+function isInsideAnalysisCache(target) {
+  const parts = path.resolve(String(target || '')).split(/[\\\/]+/);
+  return parts.some(isAnalysisCacheDirName);
+}
+
+function analysisResultScopeDir(target) {
+  const dir = path.dirname(target);
+  return isAnalysisCacheDirPath(dir) ? path.dirname(dir) : dir;
+}
+
 function uniqueFilePath(dir, fileName) {
   let target = path.join(dir, fileName);
   if (!fs.existsSync(target)) return target;
@@ -1307,6 +3353,7 @@ function uniqueFilePath(dir, fileName) {
 function migrateVisibleAnalysisResults(rootDir) {
   const root = String(rootDir || '');
   if (!root || !fs.existsSync(root)) return 0;
+  if (isAnalysisCacheDirPath(root)) return 0;
   const cacheDir = ensureVideoAnalysisCacheDir(root);
   const cacheResolved = path.resolve(cacheDir);
   let moved = 0;
@@ -1538,50 +3585,185 @@ function buildAnalysisExport(format, items, opts) {
     default:     return { ext: 'txt',  buffer: Buffer.from(exportBuildTxt(items, opts), 'utf8') };
   }
 }
-// 扫描目录里所有「…视频解析.txt」结果，按集数排序
-function collectAnalysisResults(rootDir) {
-  const root = String(rootDir || '');
-  if (!root || !fs.existsSync(root)) throw new Error('目录不存在：' + root);
-  const cacheDir = ensureVideoAnalysisCacheDir(root);
-  const cacheResolved = path.resolve(cacheDir);
+
+function analysisBaseName(name) {
+  return String(name || '').replace(/-?视频解析\.txt$/i, '');
+}
+
+function splitPartNoFromAnalysisName(name) {
+  const base = analysisBaseName(name);
+  const match = base.match(/(?:^|[-_\s])part[-_\s]*0*(\d{1,4})(?:[^\d]|$)/i);
+  if (!match) return -1;
+  return Number(match[1]);
+}
+
+function splitSourceBaseFromAnalysisName(name) {
+  return analysisBaseName(name)
+    .replace(/[-_\s]*part[-_\s]*0*\d{1,4}$/i, '')
+    .replace(/[-_\s]+$/g, '')
+    .trim();
+}
+
+function analysisDisplayBase(base, scopeDir) {
+  const fromBase = String(base || '').trim();
+  if (fromBase) return fromBase;
+  const dirName = path.basename(String(scopeDir || '')).replace(/-切分(?:-\d+)?$/i, '').trim();
+  return dirName || '视频解析';
+}
+
+function readAnalysisRecord(target, rootResolved, fromCache) {
+  const name = path.basename(target);
+  if (!isVideoAnalysisResultName(name)) return null;
+  let content = '';
+  try {
+    content = fs.readFileSync(target, 'utf8');
+  } catch (e) {
+    content = '(读取失败：' + (e && e.message ? e.message : e) + ')';
+  }
+  const base = analysisBaseName(name);
+  const splitPartNo = splitPartNoFromAnalysisName(name);
+  const splitBase = splitPartNo >= 0 ? splitSourceBaseFromAnalysisName(name) : '';
+  const scopeDir = analysisResultScopeDir(target);
+  const scopeKey = path.relative(rootResolved, path.resolve(scopeDir)) || '.';
+  const displayBase = analysisDisplayBase(splitBase || base, scopeDir);
+  const episodeNo = episodeNoFromLocalVideoName(displayBase) || episodeNoFromLocalVideoName(path.basename(scopeDir)) || episodeNoFromLocalVideoName(name);
+  return {
+    target,
+    fromCache: !!fromCache,
+    name,
+    base,
+    splitPartNo,
+    splitBase: displayBase,
+    scopeDir,
+    scopeKey,
+    episodeNo,
+    title: episodeNo ? ('第' + episodeNo + '集') : displayBase,
+    sourceName: name,
+    content,
+  };
+}
+
+function normalizeAnalysisRecords(records, rootDir) {
+  const splitGroups = new Map();
   const byKey = new Map();
+  const list = Array.isArray(records) ? records.filter(Boolean) : [];
 
-  function addResult(target, fromCache) {
-    const name = path.basename(target);
-    if (!isVideoAnalysisResultName(name)) return;
-    let content = '';
-    try { content = fs.readFileSync(target, 'utf8'); } catch (e) { content = '(读取失败：' + (e && e.message ? e.message : e) + ')'; }
-    const ep = episodeNoFromLocalVideoName(name);
-    const base = name.replace(/-?视频解析\.txt$/i, '');
-    const item = { episodeNo: ep, title: ep ? ('第' + ep + '集') : base, sourceName: name, content };
-    const key = ep ? ('ep:' + ep) : ('name:' + base);
-    if (fromCache || !byKey.has(key)) byKey.set(key, item);
-  }
-
-  function walk(target, opts) {
-    let stat;
-    try { stat = fs.statSync(target); } catch { return; }
-    if (stat.isDirectory()) {
-      const resolved = path.resolve(target);
-      if (opts.skipCache && resolved === cacheResolved) return;
-      for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
-        if (!opts.includeDotDirs && entry.name.startsWith('.')) continue;
-        walk(path.join(target, entry.name), opts);
+  for (const record of list) {
+    if (record.splitPartNo >= 0) {
+      const key = 'split:' + record.scopeKey + '|' + record.splitBase;
+      if (!splitGroups.has(key)) {
+        splitGroups.set(key, {
+          scopeKey: record.scopeKey,
+          splitBase: record.splitBase,
+          episodeNo: record.episodeNo,
+          title: record.title,
+          parts: [],
+        });
       }
-      return;
+      splitGroups.get(key).parts.push(record);
+      continue;
     }
-    if (!stat.isFile()) return;
-    addResult(target, opts.fromCache);
+
+    const key = record.episodeNo
+      ? ('scope:' + record.scopeKey + '|ep:' + record.episodeNo)
+      : ('file:' + record.scopeKey + '|' + record.name);
+    if (record.fromCache || !byKey.has(key)) {
+      byKey.set(key, {
+        episodeNo: record.episodeNo,
+        title: record.title,
+        sourceName: record.sourceName,
+        content: record.content,
+      });
+    }
   }
 
-  if (fs.existsSync(cacheDir)) walk(cacheDir, { includeDotDirs: true, skipCache: false, fromCache: true });
-  walk(root, { includeDotDirs: false, skipCache: true, fromCache: false });
+  for (const group of splitGroups.values()) {
+    group.parts.sort((a, b) =>
+      (a.splitPartNo - b.splitPartNo) ||
+      a.sourceName.localeCompare(b.sourceName, 'zh-Hans-CN'));
+    const total = group.parts.length;
+    const content = group.parts.map((part, index) => {
+      const label = '【切分片段 ' + String(index + 1).padStart(2, '0') + '/' + total + ' · ' + part.sourceName + '】';
+      return label + '\n' + (part.content || '(空)');
+    }).join('\n\n');
+    const key = group.episodeNo
+      ? ('scope:' + group.scopeKey + '|ep:' + group.episodeNo)
+      : ('split:' + group.scopeKey + '|' + group.splitBase);
+    byKey.set(key, {
+      episodeNo: group.episodeNo,
+      title: group.title || group.splitBase,
+      sourceName: group.splitBase + '-视频解析合集.txt',
+      content,
+    });
+  }
 
-  const found = filterEpisodeOutliers(Array.from(byKey.values()), root);
+  const found = filterEpisodeOutliers(Array.from(byKey.values()), rootDir);
   found.sort((a, b) =>
     (a.episodeNo || 999999) - (b.episodeNo || 999999) ||
     a.sourceName.localeCompare(b.sourceName, 'zh-Hans-CN'));
   return found;
+}
+
+// 扫描目录里所有「…视频解析.txt」结果，按集数排序
+function collectAnalysisResults(rootDir) {
+  const root = String(rootDir || '');
+  if (!root || !fs.existsSync(root)) throw new Error('目录不存在：' + root);
+  const rootResolved = path.resolve(root);
+  const records = [];
+
+  function addResult(target, fromCache) {
+    const record = readAnalysisRecord(target, rootResolved, fromCache);
+    if (record) records.push(record);
+  }
+
+  function walk(target) {
+    let stat;
+    try { stat = fs.statSync(target); } catch { return; }
+    if (stat.isDirectory()) {
+      const isRoot = path.resolve(target) === rootResolved;
+      const dirName = path.basename(target);
+      if (!isRoot && dirName.startsWith('.') && !isAnalysisCacheDirName(dirName)) return;
+      for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+        if (entry.isDirectory() && entry.name.startsWith('.') && !isAnalysisCacheDirName(entry.name)) continue;
+        walk(path.join(target, entry.name));
+      }
+      return;
+    }
+    if (!stat.isFile()) return;
+    addResult(target, isInsideAnalysisCache(target));
+  }
+
+  walk(root);
+  return normalizeAnalysisRecords(records, root);
+}
+
+// 只整合用户指定目录当前层级里的「…视频解析.txt」，不递归子目录。
+function collectAnalysisResultsInCurrentDir(rootDir) {
+  const root = String(rootDir || '');
+  if (!root || !fs.existsSync(root)) throw new Error('目录不存在：' + root);
+  const stat = fs.statSync(root);
+  if (!stat.isDirectory()) throw new Error('请选择一个目录进行整合');
+  const rootResolved = path.resolve(root);
+  const byName = new Map();
+
+  function addAnalysisFile(target, name, prefer) {
+    const record = readAnalysisRecord(target, rootResolved, prefer);
+    if (record && (prefer || !byName.has(name))) byName.set(name, record);
+  }
+
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    addAnalysisFile(path.join(root, entry.name), entry.name);
+  }
+
+  const cacheDir = path.join(root, ANALYSIS_CACHE_DIR_NAME);
+  if (fs.existsSync(cacheDir) && fs.statSync(cacheDir).isDirectory()) {
+    for (const entry of fs.readdirSync(cacheDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      addAnalysisFile(path.join(cacheDir, entry.name), entry.name, true);
+    }
+  }
+  return normalizeAnalysisRecords(Array.from(byName.values()), root);
 }
 
 function collectAnalysisResultsForFiles(filePaths) {
@@ -1597,24 +3779,101 @@ function collectAnalysisResultsForFiles(filePaths) {
     })
     .map(localVideoFileInfo));
   const rootDir = commonParentDir(files.map(file => file.path));
-  const items = [];
+  const rootResolved = path.resolve(rootDir || process.cwd());
+  const records = [];
   for (const file of files) {
     const resultPath = videoAnalysisOutputPath(file.path);
     if (!fs.existsSync(resultPath)) continue;
-    let content = '';
-    try { content = fs.readFileSync(resultPath, 'utf8'); } catch (e) { content = '(读取失败：' + (e && e.message ? e.message : e) + ')'; }
-    items.push({
-      episodeNo: file.episodeNo,
-      title: file.episodeNo ? ('第' + file.episodeNo + '集') : path.basename(file.name, path.extname(file.name)),
-      sourceName: path.basename(resultPath),
-      content,
-    });
+    const record = readAnalysisRecord(resultPath, rootResolved, true);
+    if (record) records.push(record);
   }
-  const filtered = filterEpisodeOutliers(items, rootDir);
-  filtered.sort((a, b) =>
-    (a.episodeNo || 999999) - (b.episodeNo || 999999) ||
-    a.sourceName.localeCompare(b.sourceName, 'zh-Hans-CN'));
-  return filtered;
+  return normalizeAnalysisRecords(records, rootDir);
+}
+
+function hasDirectLocalVideoFiles(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).some(entry => {
+      if (!entry.isFile()) return false;
+      return LOCAL_VIDEO_EXTS.has(path.extname(entry.name).toLowerCase());
+    });
+  } catch {
+    return false;
+  }
+}
+
+function hasDirectAnalysisResults(dir) {
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isFile() && isVideoAnalysisResultName(entry.name)) return true;
+    }
+    const cacheDir = path.join(dir, ANALYSIS_CACHE_DIR_NAME);
+    if (fs.existsSync(cacheDir) && fs.statSync(cacheDir).isDirectory()) {
+      return fs.readdirSync(cacheDir, { withFileTypes: true })
+        .some(entry => entry.isFile() && isVideoAnalysisResultName(entry.name));
+    }
+  } catch {}
+  return false;
+}
+
+function hasAnalysisResultsRecursive(dir) {
+  try {
+    const stat = fs.statSync(dir);
+    if (!stat.isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  const stack = [dir];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const target = path.join(current, entry.name);
+      if (entry.isFile()) {
+        if (isVideoAnalysisResultName(entry.name)) return true;
+        continue;
+      }
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith('.') && !isAnalysisCacheDirName(entry.name)) continue;
+      stack.push(target);
+    }
+  }
+  return false;
+}
+
+function isEpisodeLikeExportDirName(name) {
+  const text = String(name || '');
+  return /s\d{1,3}e\d{1,4}/i.test(text) ||
+    /(?:^|[^\d])ep(?:isode)?[_\-\s]*0*\d{1,4}(?:[^\d]|$)/i.test(text) ||
+    /第\s*0*\d{1,4}\s*集/i.test(text) ||
+    /(?:^|[-_\s])part[-_\s]*0*\d{1,4}(?:[^\d]|$)/i.test(text) ||
+    /切分/i.test(text);
+}
+
+function childAnalysisExportDirs(rootDir) {
+  const root = String(rootDir || '');
+  if (!root || !fs.existsSync(root)) return [];
+  let stat;
+  try { stat = fs.statSync(root); } catch { return []; }
+  if (!stat.isDirectory()) return [];
+  const rootHasOwnResults = hasDirectAnalysisResults(root) || hasDirectLocalVideoFiles(root);
+  if (rootHasOwnResults) return [];
+
+  const dirs = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+    if (isAnalysisCacheDirName(entry.name)) continue;
+    if (isEpisodeLikeExportDirName(entry.name)) continue;
+    const target = path.join(root, entry.name);
+    if (hasAnalysisResultsRecursive(target)) dirs.push(target);
+  }
+  dirs.sort((a, b) => path.basename(a).localeCompare(path.basename(b), 'zh-Hans-CN'));
+  return dirs;
 }
 
 function videoMimeType(filePath) {
@@ -2337,6 +4596,138 @@ function setupVideoSnifferIpc() {
     };
   });
 
+  ipcMain.handle('video-sniffer:tikhub-fetch-info', async (_event, payload) => {
+    try {
+      return await fetchTikhubVideoInfo(payload || {});
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('video-sniffer:tikhub-drama-radar', async (_event, payload) => {
+    try {
+      return await fetchTikhubDramaRadar(payload || {});
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:open', () => {
+    createInfoScraperWindow();
+    return { ok: true };
+  });
+
+  ipcMain.handle('info-scraper:get-state', () => infoScraperPublicState());
+
+  ipcMain.handle('info-scraper:get-extractor-status', async () => {
+    try {
+      return await getInfoScraperExtractorStatus();
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:get-login-status', async () => {
+    try {
+      return await refreshInfoScraperLoginStatusCache();
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:open-login-browser', async (_event, url) => {
+    try {
+      createInfoScraperLoginWindow(url || 'https://www.tiktok.com/login');
+      const status = await refreshInfoScraperLoginStatusCache({ notify: true });
+      return { ok: true, status };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:save-settings', (_event, payload) => {
+    try {
+      const state = readInfoScraperState();
+      if (payload && Object.prototype.hasOwnProperty.call(payload, 'maxVideos')) state.maxVideos = Math.max(1, Math.min(100, Number(payload.maxVideos) || 50));
+      writeInfoScraperState(state);
+      return infoScraperPublicState(state);
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:add-accounts', (_event, payload) => {
+    try {
+      const state = readInfoScraperState();
+      const urls = parseDramaRadarAccountUrls(payload && (payload.urls || payload.text || payload.accountUrls));
+      if (!urls.length) return { ok: false, error: '没有识别到账号链接' };
+      const byId = new Map(state.accounts.map(account => [account.id, account]));
+      let added = 0;
+      for (const url of urls) {
+        const clean = normalizeNavigationUrl(cleanupImportedUrl(url));
+        const id = infoScraperAccountId(clean);
+        const existed = byId.get(id);
+        byId.set(id, normalizeInfoScraperAccount(clean, existed || {}));
+        if (!existed) added += 1;
+      }
+      state.accounts = Array.from(byId.values()).sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'));
+      appendInfoScraperEvent(state, { type: 'settings', message: '保存账号：新增 ' + added + ' 个，总计 ' + state.accounts.length + ' 个' });
+      writeInfoScraperState(state);
+      return infoScraperPublicState(state);
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:remove-account', (_event, accountId) => {
+    try {
+      const state = readInfoScraperState();
+      state.accounts = state.accounts.filter(account => account.id !== String(accountId || ''));
+      if (state.snapshots) delete state.snapshots[String(accountId || '')];
+      appendInfoScraperEvent(state, { type: 'settings', message: '已删除账号' });
+      writeInfoScraperState(state);
+      return infoScraperPublicState(state);
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:toggle-account', (_event, payload) => {
+    try {
+      const state = readInfoScraperState();
+      const id = String((payload && payload.accountId) || '');
+      const account = state.accounts.find(item => item.id === id);
+      if (!account) return { ok: false, error: '账号不存在' };
+      account.enabled = payload && Object.prototype.hasOwnProperty.call(payload, 'enabled') ? !!payload.enabled : !account.enabled;
+      account.updatedAt = new Date().toISOString();
+      writeInfoScraperState(state);
+      return infoScraperPublicState(state);
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:refresh', async (_event, payload) => {
+    try {
+      return await refreshInfoScraperAccounts(payload || {});
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:export-bilingual-list', () => {
+    try {
+      return exportInfoScraperBilingualList();
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('info-scraper:open-url', (_event, url) => {
+    if (url && /^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { ok: true };
+  });
+
   ipcMain.handle('video-sniffer:set-download-dir', (_event, dir) => {
     const config = readSnifferConfig();
     config.downloadDir = String(dir || '');
@@ -2374,6 +4765,14 @@ function setupVideoSnifferIpc() {
     }
   });
 
+  ipcMain.handle('video-sniffer:split-video-file', async (_event, payload) => {
+    try {
+      return await splitLocalVideoFile(payload || {});
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('video-sniffer:export-analyses', async (_event, payload) => {
     try {
       const rootDir = String((payload && payload.rootDir) || '');
@@ -2382,9 +4781,47 @@ function setupVideoSnifferIpc() {
       const selectedFilePaths = Array.isArray(payload && payload.filePaths)
         ? payload.filePaths.map(filePath => String(filePath || '')).filter(Boolean)
         : [];
+      const mergeCurrentDirOnly = !!(payload && payload.mergeCurrentDirOnly);
+      const splitByFolder = !!(payload && payload.splitByFolder);
       if (!rootDir || !fs.existsSync(rootDir)) return { ok: false, error: '没有可导出的目录，请先选择保存目录或先解析视频' };
-      if (!selectedFilePaths.length) migrateVisibleAnalysisResults(rootDir);
-      const items = selectedFilePaths.length ? collectAnalysisResultsForFiles(selectedFilePaths) : collectAnalysisResults(rootDir);
+      if (splitByFolder && payload && payload.silent && !selectedFilePaths.length && !mergeCurrentDirOnly) {
+        const childDirs = childAnalysisExportDirs(rootDir);
+        if (childDirs.length) {
+          const outputs = [];
+          let totalCount = 0;
+          for (const childDir of childDirs) {
+            const childTitle = safeFileName(path.basename(childDir) || '视频解析合集', '视频解析合集').slice(0, 80) || '视频解析合集';
+            const childItems = collectAnalysisResults(childDir);
+            if (!childItems.length) continue;
+            const childBuilt = buildAnalysisExport(format, childItems, { title: childTitle });
+            const childDefName = safeFileName(childTitle + '-视频解析合集', '视频解析合集') + '.' + childBuilt.ext;
+            const childTarget = path.join(childDir, childDefName);
+            fs.writeFileSync(childTarget, childBuilt.buffer);
+            totalCount += childItems.length;
+            outputs.push({
+              dir: childDir,
+              outputPath: childTarget,
+              count: childItems.length,
+              format: childBuilt.ext,
+            });
+          }
+          if (outputs.length) {
+            return {
+              ok: true,
+              outputPath: outputs[0].outputPath,
+              outputPaths: outputs.map(item => item.outputPath),
+              outputs,
+              count: totalCount,
+              groupCount: outputs.length,
+              format: outputs[0].format,
+              splitByFolder: true,
+            };
+          }
+        }
+      }
+      const items = mergeCurrentDirOnly
+        ? collectAnalysisResultsInCurrentDir(rootDir)
+        : (selectedFilePaths.length ? collectAnalysisResultsForFiles(selectedFilePaths) : collectAnalysisResults(rootDir));
       if (!items.length) return { ok: false, error: '在该目录下没找到任何「视频解析.txt」，请先点「解析视频」生成结果' };
 
       const built = buildAnalysisExport(format, items, { title });
@@ -3012,6 +5449,7 @@ app.whenReady().then(() => {
   setupVideoSnifferIpc();
   setupAutoUpdater();
   createWindow();
+  scheduleInfoScraperPolling();
   checkForUpdatesSoon();
 
   app.on('activate', () => {
